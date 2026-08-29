@@ -90,6 +90,19 @@ def _handle_error(err: Exception):
     raise typer.Exit(code=1)
 
 
+def resolve_output_dir(media_path: Path, custom_output: Optional[Path] = None) -> Path:
+    """Resolve target output folder: custom output, or folder alongside the source media."""
+    if custom_output:
+        return custom_output
+    # If media is in current workspace directory, use ./output/<name>, otherwise use <media_parent>/<name>
+    try:
+        if media_path.resolve().parent == Path.cwd().resolve():
+            return Path.cwd() / "output" / media_path.stem
+    except Exception:
+        pass
+    return media_path.parent / media_path.stem
+
+
 @app.command()
 def process(
     media_file: Path = typer.Argument(..., help="Path to raw Riverside recording (.mp4, .mov, .wav, etc.)"),
@@ -106,7 +119,7 @@ def process(
             raise typer.Exit(1)
 
         base_name = media_file.stem
-        target_out_dir = output_dir or (settings.DEFAULT_OUTPUT_DIR / base_name)
+        target_out_dir = resolve_output_dir(media_file, output_dir)
         target_out_dir.mkdir(parents=True, exist_ok=True)
 
         console.print(Panel(f"[bold cyan]Processing Episode:[/bold cyan] {media_file.name}\n[bold]Output Directory:[/bold] {target_out_dir}", title="ADN Divergente Processor"))
@@ -143,7 +156,7 @@ def transcribe(
 ):
     """📝 Transcribe audio/video to JSON, TXT, and SRT subtitles."""
     try:
-        target_out_dir = output_dir or (settings.DEFAULT_OUTPUT_DIR / media_file.stem)
+        target_out_dir = resolve_output_dir(media_file, output_dir)
         transcript = run_transcription(input_file=media_file, output_dir=target_out_dir, backend=backend)
         console.print(f"[green]Transcription finished ({transcript.duration / 60:.1f} minutes).[/green]")
     except Exception as e:
