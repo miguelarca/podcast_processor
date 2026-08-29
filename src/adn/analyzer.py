@@ -42,6 +42,7 @@ def _prepare_transcript_text_with_timestamps(transcript: Transcript) -> str:
 def analyze_with_gemini(transcript: Transcript) -> EpisodeAnalysis:
     """Run analysis using Google Gemini API with structured JSON output."""
     from google import genai
+    from google.genai import types
     from google.genai.errors import APIError, ClientError, ServerError
 
     if not settings.GEMINI_API_KEY:
@@ -58,12 +59,16 @@ def analyze_with_gemini(transcript: Transcript) -> EpisodeAnalysis:
 """
     full_prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}"
 
+    import time
+
     candidate_models = [
         settings.GEMINI_MODEL,
+        "gemini-3.7-flash",
         "gemini-3.6-flash",
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
-        "gemini-1.5-pro",
+        "gemini-3.5-flash",
+        "gemini-flash-latest",
+        "gemini-2.5-pro",
+        "gemini-pro-latest",
     ]
     # Deduplicate while preserving order
     seen = set()
@@ -71,36 +76,45 @@ def analyze_with_gemini(transcript: Transcript) -> EpisodeAnalysis:
 
     last_error_message = None
     for model_name in models_to_try:
-        try:
-            console.print(f"[cyan]Analyzing transcript with Gemini ({model_name})...[/cyan]")
-            response = client.models.generate_content(
-                model=model_name,
-                contents=full_prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=EpisodeAnalysis,
-                    temperature=0.4,
-                ),
-            )
-            return EpisodeAnalysis.model_validate_json(response.text)
-        except (ClientError, ServerError, APIError) as e:
-            code = getattr(e, "code", getattr(e, "status_code", 500))
-            if code == 503:
-                reason = "temporarily high demand / service unavailable"
-            elif code == 429:
-                reason = "rate limit reached"
-            elif code == 404:
-                reason = "model not found"
-            else:
-                reason = str(e)
-
-            console.print(f"[yellow]⚠️  Gemini ({model_name}) was unavailable ({reason}). Trying fallback model...[/yellow]")
-            last_error_message = f"Gemini API error ({code}): {reason}"
-            continue
-        except Exception as e:
-            last_error_message = str(e)
-            console.print(f"[yellow]⚠️  Unexpected error on ({model_name}): {e}. Trying fallback...[/yellow]")
-            continue
+        for attempt in range(2):
+            try:
+                console.print(f"[cyan]Analyzing transcript with Gemini ({model_name})...[/cyan]")
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=full_prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=EpisodeAnalysis,
+                        temperature=0.4,
+                    ),
+                )
+                return EpisodeAnalysis.model_validate_json(response.text)
+            except (ClientError, ServerError, APIError) as e:
+                code = getattr(e, "code", getattr(e, "status_code", 500))
+                if code == 503:
+                    reason = "temporarily high demand"
+                    console.print(f"[yellow]⚠️  Gemini ({model_name}) is busy (503). Retrying in 2s...[/yellow]")
+                    time.sleep(2)
+                    last_error_message = f"Gemini ({model_name}) 503 high demand"
+                    continue
+                elif code == 429:
+                    reason = "rate limit reached"
+                    console.print(f"[yellow]⚠️  Rate limited on ({model_name}). Waiting 3s...[/yellow]")
+                    time.sleep(3)
+                    last_error_message = f"Gemini ({model_name}) 429 rate limit"
+                    continue
+                elif code == 404:
+                    reason = "model not found"
+                    last_error_message = f"Gemini ({model_name}) 404 model not found"
+                    break  # Try next model immediately
+                else:
+                    reason = str(e)
+                    last_error_message = f"Gemini ({model_name}) error ({code}): {reason}"
+                    break
+            except Exception as e:
+                last_error_message = str(e)
+                console.print(f"[yellow]⚠️  Unexpected error on ({model_name}): {e}[/yellow]")
+                break
 
     raise RuntimeError(
         f"All Gemini models failed to generate analysis.\nLast error: {last_error_message}\n"
