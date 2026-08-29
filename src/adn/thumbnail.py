@@ -120,6 +120,29 @@ def generate_single_image(prompt: str, output_path: Path) -> bool:
     return False
 
 
+def save_thumbnail_pack(concepts: List[ThumbnailConcept], output_dir: Path, base_name: str) -> Path:
+    """Save thumbnail prompts and concepts to file."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    prompts_file = output_dir / f"{base_name}_thumbnail_prompts.txt"
+    json_file = output_dir / f"{base_name}_thumbnail_concepts.json"
+
+    with open(json_file, "w", encoding="utf-8") as f:
+        f.write(json.dumps([c.model_dump() for c in concepts], indent=2, ensure_ascii=False))
+
+    with open(prompts_file, "w", encoding="utf-8") as f:
+        f.write("=== PROMPTS DE MINIATURAS PARA GEMINI / MIDJOURNEY ===\n\n")
+        for i, c in enumerate(concepts, 1):
+            f.write(f"🎨 CONCEPTO {i}: {c.headline_text}\n")
+            if c.subtext:
+                f.write(f"   Subtítulo: {c.subtext}\n")
+            f.write(f"   Metáfora: {c.visual_metaphor}\n\n")
+            f.write(f"   PROMPT LISTO PARA PEGAR EN GEMINI:\n")
+            f.write(f"   \"{c.gemini_prompt}\"\n\n")
+            f.write("-" * 60 + "\n\n")
+
+    return prompts_file
+
+
 def generate_all_thumbnails(
     analysis: EpisodeAnalysis,
     output_dir: Path,
@@ -170,22 +193,6 @@ def generate_all_thumbnails(
                     border_style="yellow"
                 )
             )
-
-    return prompts_file
-
-    with open(json_file, "w", encoding="utf-8") as f:
-        f.write(json.dumps([c.model_dump() for c in concepts], indent=2, ensure_ascii=False))
-
-    with open(prompts_file, "w", encoding="utf-8") as f:
-        f.write("=== PROMPTS DE MINIATURAS PARA GEMINI / MIDJOURNEY ===\n\n")
-        for i, c in enumerate(concepts, 1):
-            f.write(f"🎨 CONCEPTO {i}: {c.headline_text}\n")
-            if c.subtext:
-                f.write(f"   Subtítulo: {c.subtext}\n")
-            f.write(f"   Metáfora: {c.visual_metaphor}\n\n")
-            f.write(f"   PROMPT LISTO PARA PEGAR EN GEMINI:\n")
-            f.write(f"   \"{c.gemini_prompt}\"\n\n")
-            f.write("-" * 60 + "\n\n")
 
     return prompts_file
 
