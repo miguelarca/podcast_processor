@@ -225,8 +225,84 @@ def shorts(
 
 
 @app.command()
+def upload(
+    video_file: Path = typer.Argument(..., help="Path to video file to upload"),
+    analysis_file: Path = typer.Argument(..., help="Path to analysis.json with title/chapters metadata"),
+    transcript_file: Optional[Path] = typer.Option(None, "--transcript", "-t", help="Path to transcript.srt for native CC captions"),
+    title: Optional[str] = typer.Option(None, "--title", help="Custom video title (overrides AI suggestions)"),
+    privacy: str = typer.Option("unlisted", "--privacy", "-p", help="unlisted | private | public"),
+    thumbnail: Optional[Path] = typer.Option(None, "--thumbnail", help="Path to thumbnail image file (.png/.jpg)"),
+):
+    """🚀 Upload a full episode or video clip to YouTube with automated metadata & chapters."""
+    try:
+        from adn.uploader import upload_full_episode
+
+        if not video_file.exists():
+            console.print(f"[red]Error: Video file not found:[/red] {video_file}")
+            raise typer.Exit(1)
+        if not analysis_file.exists():
+            console.print(f"[red]Error: Analysis file not found:[/red] {analysis_file}")
+            raise typer.Exit(1)
+
+        upload_full_episode(
+            video_path=video_file,
+            analysis_path=analysis_file,
+            transcript_path=transcript_file,
+            custom_title=title,
+            privacy_status=privacy,
+            thumbnail_path=thumbnail,
+        )
+    except Exception as e:
+        _handle_error(e)
+
+
+@app.command(name="upload-shorts")
+def upload_shorts(
+    analysis_file: Path = typer.Argument(..., help="Path to analysis.json"),
+    shorts_dir: Optional[Path] = typer.Option(None, "--shorts-dir", "-s", help="Custom folder containing shorts/"),
+    privacy: str = typer.Option("unlisted", "--privacy", "-p", help="unlisted | private | public"),
+):
+    """📱 Batch upload all generated vertical shorts to YouTube Shorts."""
+    try:
+        from adn.uploader import upload_all_shorts_batch
+
+        target_dir = shorts_dir or (analysis_file.parent / "shorts")
+        if not target_dir.exists():
+            console.print(f"[red]Error: Shorts directory not found:[/red] {target_dir}")
+            raise typer.Exit(1)
+
+        upload_all_shorts_batch(
+            shorts_dir=target_dir,
+            analysis_path=analysis_file,
+            privacy_status=privacy,
+        )
+    except Exception as e:
+        _handle_error(e)
+
+
+@app.command()
+def auth():
+    """🔑 Authenticate with YouTube Data API via browser OAuth."""
+    try:
+        from adn.uploader import get_youtube_service
+
+        console.print("[cyan]Testing YouTube authentication...[/cyan]")
+        youtube = get_youtube_service()
+        # Verify by fetching authenticated user's channels
+        response = youtube.channels().list(mine=True, part="snippet").execute()
+        channels = response.get("items", [])
+        if channels:
+            ch_title = channels[0]["snippet"]["title"]
+            console.print(f"[bold green]✓ Authenticated as YouTube Channel:[/bold green] [bold yellow]{ch_title}[/bold yellow]")
+        else:
+            console.print("[bold green]✓ YouTube authentication succeeded![/bold green]")
+    except Exception as e:
+        _handle_error(e)
+
+
+@app.command()
 def doctor():
-    """🩺 Inspect system environment, FFmpeg status, and AI API keys."""
+    """🩺 Inspect system environment, FFmpeg status, AI keys, and YouTube OAuth."""
     table = Table(title="ADN Divergente Environment Health Check", border_style="cyan")
     table.add_column("Component", style="bold")
     table.add_column("Status", style="yellow")
@@ -237,7 +313,7 @@ def doctor():
     if ffmpeg:
         table.add_row("FFmpeg", "[green]✓ Installed[/green]", ffmpeg)
     else:
-        table.add_row("FFmpeg", "[red]✗ Missing[/red]", "Run: brew install ffmpeg")
+        table.add_row("FFmpeg", "[red]✗ Missing[/red]", "Run: brew install ffmpeg-full")
 
     # Check Gemini API Key
     if settings.GEMINI_API_KEY:
@@ -256,6 +332,16 @@ def doctor():
         table.add_row("Groq API Key", "[green]✓ Configured[/green]", f"{settings.GROQ_API_KEY[:6]}...")
     else:
         table.add_row("Groq API Key", "[yellow]○ Not Set[/yellow]", "Add GROQ_API_KEY in .env (optional for fast cloud Whisper)")
+
+    # Check YouTube OAuth Credentials
+    secrets_file = Path("client_secrets.json")
+    token_file = Path("token.json")
+    if token_file.exists():
+        table.add_row("YouTube OAuth", "[green]✓ Authenticated[/green]", "token.json active")
+    elif secrets_file.exists():
+        table.add_row("YouTube OAuth", "[yellow]Ready to Auth[/yellow]", "Run 'adn auth' to connect channel")
+    else:
+        table.add_row("YouTube OAuth", "[dim]○ Optional[/dim]", "Add client_secrets.json to enable auto-upload")
 
     console.print(table)
 

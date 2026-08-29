@@ -32,7 +32,12 @@ uv run adn analyze output/<episode>/<episode>_transcript.json
 uv run adn cut /path/to/episode.mp4 output/<episode>/<episode>_analysis.json
 uv run adn shorts /path/to/episode.mp4 output/<episode>/<episode>_analysis.json output/<episode>/<episode>_transcript.json
 
-# 3. Health & Configuration Check
+# 3. YouTube Automated Uploads
+uv run adn upload /path/to/episode.mp4 output/<episode>/<episode>_analysis.json --privacy unlisted
+uv run adn upload-shorts output/<episode>/<episode>_analysis.json --privacy unlisted
+uv run adn auth
+
+# 4. Health & Configuration Check
 uv run adn doctor
 ```
 

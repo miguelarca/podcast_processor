@@ -29,6 +29,9 @@ wheels/
 !.env.example
 *.pem
 *.key
+client_secrets*.json
+token.json
+oauth_credentials.json
 
 # Media files (Prevent committing large video/audio raw data)
 *.mp4

@@ -52,5 +52,19 @@ uv run adn process episode.mp4
 | `uv run adn analyze <transcript.json>` | Generates 10 YouTube titles, chapters, show notes & clip ideas |
 | `uv run adn cut <video> <analysis.json>` | Slices standalone 16:9 mini-episodes (Lex style) |
 | `uv run adn shorts <video> <analysis.json> <transcript.json>` | Renders 9:16 vertical shorts with dynamic karaoke subtitles |
-| `uv run adn doctor` | Checks FFmpeg status and API key setup |
+| `uv run adn upload <video> <analysis.json>` | 🚀 Uploads full video with title, chapters, description, CC to YouTube |
+| `uv run adn upload-shorts <analysis.json>` | 📱 Batch uploads all vertical shorts to YouTube Shorts |
+| `uv run adn auth` | Authenticates with YouTube Data API via browser OAuth |
+| `uv run adn doctor` | Checks FFmpeg, AI keys, and YouTube OAuth status |
+
+---
+
+## 📺 YouTube Auto-Upload Setup (Optional)
+
+To enable 1-click uploads directly from the CLI:
+1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
+2. Enable the **YouTube Data API v3**.
+3. Create an **OAuth 2.0 Client ID** (Application type: *Desktop App*).
+4. Download the JSON and place it in the project root as `client_secrets.json`.
+5. Run `uv run adn auth` to log in once in your browser. (Credentials are saved to `token.json`, which is git-ignored).
 
