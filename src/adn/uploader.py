@@ -262,6 +262,63 @@ def upload_all_shorts_batch(
     return uploaded_ids
 
 
+def upload_all_clips_batch(
+    clips_dir: Path,
+    analysis_path: Path,
+    privacy_status: str = "unlisted"
+) -> List[str]:
+    """Upload all generated standalone 16:9 mini-episode clips in a directory."""
+    with open(analysis_path, "r", encoding="utf-8") as f:
+        analysis = EpisodeAnalysis(**json.load(f))
+
+    clips_lookup = {sanitize_title(c.title): c for c in analysis.clips}
+    video_files = sorted(list(clips_dir.glob("clip_*.mp4")))
+
+    if not video_files:
+        raise FileNotFoundError(f"No clips found in {clips_dir}")
+
+    youtube = get_youtube_service()
+    uploaded_ids = []
+
+    console.print(f"[bold cyan]Starting batch upload of {len(video_files)} standalone 16:9 clips...[/bold cyan]")
+
+    for idx, clip_file in enumerate(video_files, start=1):
+        # Match clip metadata from analysis
+        title = f"Clip {idx:02d} | ADN Divergente"
+        hook = ""
+        summary = ""
+        for clean_name, c in clips_lookup.items():
+            if clean_name in clip_file.name:
+                title = f"{c.title} | ADN Divergente"
+                hook = c.hook
+                summary = c.summary
+                break
+
+        description = (
+            f"⚡ {hook}\n\n"
+            f"📌 Resumen del Clip:\n{summary}\n\n"
+            f"🎙️ Extracto del episodio completo del podcast ADN Divergente con Miguel y su hermano.\n"
+            f"Conversaciones sin filtros ni rodeos sobre temas sociales, culturales y económicos.\n\n"
+            f"🔔 ¡Suscríbete al canal para más debates y clips!\n"
+            f"https://www.youtube.com/@ADNDivergente\n\n"
+            f"#ADNDivergente #Podcast #Debate #Clips"
+        )
+        tags = list(set(["ADN Divergente", "Clips", "Podcast", "Debate"] + analysis.core_themes[:6]))
+
+        console.print(f"\n[{idx}/{len(video_files)}] Uploading Clip: {clip_file.name}")
+        vid_id = upload_video(
+            youtube=youtube,
+            video_path=clip_file,
+            title=title,
+            description=description,
+            tags=tags,
+            privacy_status=privacy_status,
+        )
+        uploaded_ids.append(vid_id)
+
+    return uploaded_ids
+
+
 def sanitize_title(title: str) -> str:
     import re
     s = re.sub(r"[^\w\s-]", "", title).strip().lower()

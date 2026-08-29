@@ -280,6 +280,30 @@ def upload_shorts(
         _handle_error(e)
 
 
+@app.command(name="upload-clips")
+def upload_clips(
+    analysis_file: Path = typer.Argument(..., help="Path to analysis.json"),
+    clips_dir: Optional[Path] = typer.Option(None, "--clips-dir", "-c", help="Custom folder containing clips/"),
+    privacy: str = typer.Option("unlisted", "--privacy", "-p", help="unlisted | private | public"),
+):
+    """✂️ Batch upload all generated 16:9 standalone mini-episode clips to YouTube."""
+    try:
+        from adn.uploader import upload_all_clips_batch
+
+        target_dir = clips_dir or (analysis_file.parent / "clips")
+        if not target_dir.exists():
+            console.print(f"[red]Error: Clips directory not found:[/red] {target_dir}")
+            raise typer.Exit(1)
+
+        upload_all_clips_batch(
+            clips_dir=target_dir,
+            analysis_path=analysis_file,
+            privacy_status=privacy,
+        )
+    except Exception as e:
+        _handle_error(e)
+
+
 @app.command()
 def auth():
     """🔑 Authenticate with YouTube Data API via browser OAuth."""
