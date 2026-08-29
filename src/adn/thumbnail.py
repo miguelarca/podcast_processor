@@ -211,83 +211,188 @@ def display_thumbnail_concepts(concepts: List[ThumbnailConcept]):
     console.print(table)
 
 
+def _wrap_text_to_width(text: str, font: ImageFont.FreeTypeFont, max_width: int, draw: ImageDraw.ImageDraw) -> List[str]:
+    """Wrap text into multiple lines so that no line exceeds max_width."""
+    words = text.split()
+    if not words:
+        return []
+
+    lines = []
+    current_line = []
+
+    for word in words:
+        test_line = " ".join(current_line + [word])
+        bbox = draw.textbbox((0, 0), test_line, font=font, stroke_width=6)
+        line_w = bbox[2] - bbox[0]
+        if line_w <= max_width or not current_line:
+            current_line.append(word)
+        else:
+            lines.append(" ".join(current_line))
+            current_line = [word]
+
+    if current_line:
+        lines.append(" ".join(current_line))
+
+    return lines
+
+
 def create_thumbnail_composite(
     background_image_path: Path,
     output_thumbnail_path: Path,
     headline_text: str,
     subtext: Optional[str] = None,
-    badge_text: str = "EPISODIO DISPONIBLE",
+    badge_text: str = "EPISODIO COMPLETO",
+    position: str = "bottom",
 ) -> Path:
-    """Composite ADN Divergente branding and stylized text onto a 1280x720 thumbnail."""
+    """Composite ADN Divergente branding and stylized auto-fitting text onto a 1280x720 thumbnail."""
     output_thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
 
     # 1. Open and resize background to standard 1280x720 (16:9)
     img = Image.open(background_image_path).convert("RGBA")
     img = img.resize((1280, 720), Image.Resampling.LANCZOS)
 
-    # 2. Add subtle dark gradient overlay at the top/bottom for high text readability
-    overlay = Image.new("RGBA", (1280, 720), (0, 0, 0, 0))
-    draw_overlay = ImageDraw.Draw(overlay)
-
-    # Top gradient for logo
-    draw_overlay.rectangle([(0, 0), (1280, 100)], fill=(0, 0, 0, 80))
-    # Bottom gradient for text
-    draw_overlay.rectangle([(0, 520), (1280, 720)], fill=(0, 0, 0, 130))
-    img = Image.alpha_composite(img, overlay)
-
-    draw = ImageDraw.Draw(img)
-
-    # Try to load high-impact system fonts
+    # 2. Font candidates lookup
     font_paths = [
         "/System/Library/Fonts/Supplemental/Impact.ttf",
         "/System/Library/Fonts/Supplemental/Arial Black.ttf",
         "/System/Library/Fonts/Helvetica.ttc",
         "/Library/Fonts/Arial.ttf",
     ]
-    font_main = None
+    font_file = None
     for fp in font_paths:
         if Path(fp).exists():
+            font_file = fp
+            break
+
+    # 3. Dynamic Font Auto-Sizer & Wrapper
+    # Target maximum text block width is 1140px (70px padding each side)
+    max_text_width = 1140
+    headline_clean = headline_text.strip().upper()
+
+    # Try font sizes from 64 down to 36
+    headline_lines = []
+    font_headline = None
+    font_sub = None
+    font_size_used = 60
+
+    temp_draw = ImageDraw.Draw(img)
+
+    for f_size in range(64, 34, -4):
+        if font_file:
             try:
-                font_main = ImageFont.truetype(fp, size=56)
-                font_sub = ImageFont.truetype(fp, size=32)
-                font_badge = ImageFont.truetype(fp, size=24)
-                break
+                f_h = ImageFont.truetype(font_file, size=f_size)
             except Exception:
-                continue
+                f_h = ImageFont.load_default()
+        else:
+            f_h = ImageFont.load_default()
 
-    if not font_main:
-        font_main = font_sub = font_badge = ImageFont.load_default()
+        lines = _wrap_text_to_width(headline_clean, f_h, max_text_width, temp_draw)
+        # We prefer at most 2 lines for the headline (3 lines if unavoidable)
+        if len(lines) <= 2:
+            font_headline = f_h
+            headline_lines = lines
+            font_size_used = f_size
+            break
+        elif f_size <= 36:
+            font_headline = f_h
+            headline_lines = lines
+            font_size_used = f_size
 
-    # 3. Draw Top-Left Brand Logo "ADN DIVERGENTE"
-    draw.text((40, 30), "ADN DIVERGENTE", font=font_badge, fill=(255, 204, 0, 255), stroke_width=3, stroke_fill=(0, 0, 0, 255))
+    if not font_headline:
+        font_headline = ImageFont.load_default()
+        headline_lines = [headline_clean]
 
-    # 4. Draw Main Headline (Centered / Bottom)
-    headline_clean = headline_text.upper()
-    # Draw with thick black stroke for maximum contrast
-    draw.text(
-        (640, 570),
-        headline_clean,
-        font=font_main,
-        fill=(255, 255, 255, 255),
-        stroke_width=6,
-        stroke_fill=(0, 0, 0, 255),
-        anchor="ms"
-    )
+    # Subtitle font (approx 55% of headline size)
+    sub_font_size = max(24, int(font_size_used * 0.55))
+    if font_file:
+        try:
+            font_sub = ImageFont.truetype(font_file, size=sub_font_size)
+            font_badge = ImageFont.truetype(font_file, size=24)
+            font_small_badge = ImageFont.truetype(font_file, size=18)
+        except Exception:
+            font_sub = font_badge = font_small_badge = ImageFont.load_default()
+    else:
+        font_sub = font_badge = font_small_badge = ImageFont.load_default()
 
-    # 5. Draw Subtext if present
+    # Wrap subtext if present
+    subtext_lines = []
     if subtext:
-        draw.text(
-            (640, 630),
-            subtext,
-            font=font_sub,
-            fill=(255, 220, 50, 255),
-            stroke_width=4,
-            stroke_fill=(0, 0, 0, 255),
-            anchor="ms"
-        )
+        subtext_lines = _wrap_text_to_width(subtext.strip(), font_sub, max_text_width - 100, temp_draw)
 
-    # 6. Save as PNG
+    # 4. Calculate total text block height and positions
+    line_spacing = 8
+    line_heights = []
+    for line in headline_lines:
+        bbox = temp_draw.textbbox((0, 0), line, font=font_headline, stroke_width=6)
+        line_heights.append(bbox[3] - bbox[1])
+
+    sub_line_heights = []
+    for line in subtext_lines:
+        bbox = temp_draw.textbbox((0, 0), line, font=font_sub, stroke_width=4)
+        sub_line_heights.append(bbox[3] - bbox[1])
+
+    total_headline_h = sum(line_heights) + (len(line_heights) - 1) * line_spacing
+    total_sub_h = (sum(sub_line_heights) + (len(sub_line_heights) - 1) * 6 + 14) if subtext_lines else 0
+    total_content_h = total_headline_h + total_sub_h
+
+    # Base Y positioning (leave 40px safe space from bottom for YouTube progress bar)
+    start_y = 660 - total_content_h
+
+    # 5. Build Smooth Dark Backdrop Gradient behind text
+    overlay = Image.new("RGBA", (1280, 720), (0, 0, 0, 0))
+    draw_overlay = ImageDraw.Draw(overlay)
+
+    # Top brand bar scrim
+    draw_overlay.rectangle([(0, 0), (1280, 90)], fill=(0, 0, 0, 110))
+
+    # Bottom gradient overlay (covers from start_y - 40 to 720)
+    grad_top = max(0, int(start_y - 45))
+    draw_overlay.rectangle([(0, grad_top), (1280, 720)], fill=(0, 0, 0, 160))
+    img = Image.alpha_composite(img, overlay)
+
+    draw = ImageDraw.Draw(img)
+
+    # 6. Draw Top-Left Brand Logo "ADN DIVERGENTE" with yellow highlight
+    draw.rectangle([(30, 22), (235, 62)], fill=(0, 0, 0, 200), outline=(255, 204, 0, 255), width=2)
+    draw.text((42, 28), "ADN DIVERGENTE", font=font_badge, fill=(255, 204, 0, 255))
+
+    # 7. Draw Bottom-Left "EPISODIO COMPLETO" Badge
+    draw.rectangle([(35, 665), (210, 695)], fill=(220, 38, 38, 230))
+    draw.text((45, 670), badge_text.upper(), font=font_small_badge, fill=(255, 255, 255, 255))
+
+    # 8. Draw Headline Lines (Centered, with thick outline)
+    current_y = start_y
+    for i, line in enumerate(headline_lines):
+        # Alternate line colors: Line 1 white, Line 2 bright yellow for visual punch
+        text_color = (255, 255, 255, 255) if (i % 2 == 0) else (255, 220, 40, 255)
+        draw.text(
+            (640, current_y),
+            line,
+            font=font_headline,
+            fill=text_color,
+            stroke_width=7,
+            stroke_fill=(0, 0, 0, 255),
+            anchor="mt"
+        )
+        current_y += line_heights[i] + line_spacing
+
+    # 9. Draw Subtext Lines
+    if subtext_lines:
+        current_y += 10
+        for line in subtext_lines:
+            draw.text(
+                (640, current_y),
+                line,
+                font=font_sub,
+                fill=(255, 235, 100, 255),
+                stroke_width=4,
+                stroke_fill=(0, 0, 0, 255),
+                anchor="mt"
+            )
+            current_y += (sub_line_heights[0] if sub_line_heights else 28) + 6
+
+    # 10. Save as high quality JPEG
     final_img = img.convert("RGB")
     final_img.save(output_thumbnail_path, format="JPEG", quality=95)
-    console.print(f"[bold green]✓ Created Thumbnail Composite:[/bold green] {output_thumbnail_path.name}")
+    console.print(f"[bold green]✓ Created Auto-Fitted Thumbnail:[/bold green] {output_thumbnail_path}")
     return output_thumbnail_path
