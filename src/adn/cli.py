@@ -146,10 +146,8 @@ def process(
         # Step 5: Generate Thumbnail Concepts and Image Prompts
         console.print("\n[bold cyan]Generating YouTube thumbnail concepts & prompts...[/bold cyan]")
         try:
-            from adn.thumbnail import display_thumbnail_concepts, generate_thumbnail_concepts, save_thumbnail_pack
-            concepts = generate_thumbnail_concepts(analysis=analysis)
-            save_thumbnail_pack(concepts=concepts, output_dir=target_out_dir, base_name=base_name)
-            display_thumbnail_concepts(concepts)
+            from adn.thumbnail import generate_all_thumbnails
+            generate_all_thumbnails(analysis=analysis, output_dir=target_out_dir, base_name=base_name)
         except Exception as th_err:
             console.print(f"[yellow]⚠️  Could not generate thumbnail concepts:[/yellow] {th_err}")
 
@@ -329,9 +327,9 @@ def thumbnail_command(
     analysis_file: Path = typer.Argument(..., help="Path to analysis.json"),
     output_dir: Optional[Path] = typer.Option(None, "--output", "-o"),
 ):
-    """🎨 Generate 3 high-CTR thumbnail concepts and ready-to-use Gemini prompts."""
+    """🎨 Generate 3 high-CTR thumbnail concepts, Gemini prompts, and attempt image renders."""
     try:
-        from adn.thumbnail import display_thumbnail_concepts, generate_thumbnail_concepts, save_thumbnail_pack
+        from adn.thumbnail import generate_all_thumbnails
 
         if not analysis_file.exists():
             console.print(f"[red]Error: File not found:[/red] {analysis_file}")
@@ -342,10 +340,7 @@ def thumbnail_command(
 
         target_out_dir = output_dir or analysis_file.parent
         base_name = analysis_file.stem.replace("_analysis", "")
-        concepts = generate_thumbnail_concepts(analysis=analysis)
-        prompts_file = save_thumbnail_pack(concepts=concepts, output_dir=target_out_dir, base_name=base_name)
-        display_thumbnail_concepts(concepts)
-        console.print(f"\n[green]Saved Gemini image prompts to:[/green] [bold underline]{prompts_file}[/bold underline]\n")
+        generate_all_thumbnails(analysis=analysis, output_dir=target_out_dir, base_name=base_name)
     except Exception as e:
         _handle_error(e)
 

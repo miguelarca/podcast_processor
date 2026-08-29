@@ -72,11 +72,106 @@ Opciones de títulos: {', '.join([t.title for t in analysis.title_options[:5]])}
     return pack.concepts
 
 
-def save_thumbnail_pack(concepts: List[ThumbnailConcept], output_dir: Path, base_name: str) -> Path:
-    """Save thumbnail prompts and concepts to file."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    prompts_file = output_dir / f"{base_name}_thumbnail_prompts.txt"
-    json_file = output_dir / f"{base_name}_thumbnail_concepts.json"
+def generate_single_image(prompt: str, output_path: Path) -> bool:
+    """Attempt to generate an actual image file via Gemini or OpenAI APIs."""
+    from google import genai
+    from google.genai import types
+
+    # 1. Try Google Gemini Flash Image API
+    if settings.GEMINI_API_KEY:
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        for model in ["gemini-2.5-flash-image", "gemini-3.1-flash-image"]:
+            try:
+                res = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(response_modalities=["IMAGE"]),
+                )
+                for part in res.candidates[0].content.parts:
+                    if part.inline_data:
+                        with open(output_path, "wb") as img_out:
+                            img_out.write(part.inline_data.data)
+                        return True
+            except Exception:
+                continue
+
+    # 2. Fallback to OpenAI DALL-E 3 if configured
+    if settings.OPENAI_API_KEY:
+        try:
+            from openai import OpenAI
+            import requests
+
+            oa_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+            resp = oa_client.images.generate(
+                model="dall-e-3",
+                prompt=prompt,
+                size="1792x1024",
+                quality="standard",
+                n=1,
+            )
+            img_url = resp.data[0].url
+            img_bytes = requests.get(img_url).content
+            with open(output_path, "wb") as img_out:
+                img_out.write(img_bytes)
+            return True
+        except Exception:
+            pass
+
+    return False
+
+
+def generate_all_thumbnails(
+    analysis: EpisodeAnalysis,
+    output_dir: Path,
+    base_name: str,
+    auto_render_images: bool = True
+) -> Path:
+    """Master orchestrator for thumbnail concept ideation, generation, and compositing."""
+    thumbs_dir = output_dir / "thumbnails"
+    thumbs_dir.mkdir(parents=True, exist_ok=True)
+
+    concepts = generate_thumbnail_concepts(analysis=analysis)
+    prompts_file = save_thumbnail_pack(concepts=concepts, output_dir=thumbs_dir, base_name=base_name)
+    display_thumbnail_concepts(concepts)
+
+    if auto_render_images:
+        console.print("\n[cyan]Attempting direct AI image generation for thumbnail concepts...[/cyan]")
+        successful_renders = 0
+
+        for i, c in enumerate(concepts, 1):
+            raw_img_path = thumbs_dir / f"thumb_{i:02d}_background.png"
+            final_thumb_path = thumbs_dir / f"thumb_{i:02d}_final.jpg"
+
+            console.print(f"  [{i}/{len(concepts)}] Generating image for: '{c.headline_text}'...")
+            if generate_single_image(prompt=c.gemini_prompt, output_path=raw_img_path):
+                create_thumbnail_composite(
+                    background_image_path=raw_img_path,
+                    output_thumbnail_path=final_thumb_path,
+                    headline_text=c.headline_text,
+                    subtext=c.subtext,
+                )
+                successful_renders += 1
+            else:
+                console.print(f"  [yellow]○ Direct API generation unavailable for concept {i}.[/yellow]")
+
+        if successful_renders > 0:
+            console.print(f"[bold green]✨ Successfully generated {successful_renders} thumbnail images in:[/bold green] {thumbs_dir}")
+        else:
+            console.print(
+                Panel(
+                    "[bold yellow]ℹ️  Direct Image Generation API Quota Note[/bold yellow]\n\n"
+                    "Google AI Studio's Free Tier includes text & transcript analysis at $0 cost, "
+                    "while direct API image generation requires Pay-As-You-Go billing enabled.\n\n"
+                    f"👉 [bold green]Easy Free Option:[/bold green] Copy the prompts saved in:\n"
+                    f"[bold underline]{prompts_file}[/bold underline]\n"
+                    "Paste them into [bold cyan]gemini.google.com[/bold cyan] or [bold cyan]Midjourney[/bold cyan] for free, "
+                    "then run:\n"
+                    "[bold]uv run adn composite-thumbnail /path/to/downloaded.png --headline \"TITULAR\"[/bold]",
+                    border_style="yellow"
+                )
+            )
+
+    return prompts_file
 
     with open(json_file, "w", encoding="utf-8") as f:
         f.write(json.dumps([c.model_dump() for c in concepts], indent=2, ensure_ascii=False))
