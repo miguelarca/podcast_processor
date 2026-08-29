@@ -20,19 +20,37 @@ This tool automates the process of transforming raw Riverside recordings into pu
 
 ---
 
-## 🚀 Quickstart (Coming soon)
+## 🚀 Quickstart with `uv` (Recommended)
 
 ```bash
-# Clone the repository
-git clone https://github.com/<your-username>/podcast-processor.git
-cd podcast-processor
+# 1. Clone & enter project
+git clone git@github.com:miguelarca/podcast_processor.git
+cd podcast_processor
 
-# Install dependencies
-pip install -r requirements.txt
+# 2. Sync dependencies (instant with uv)
+uv sync
 
-# Configure environment
+# 3. Configure environment
 cp .env.example .env
+# (Add your GEMINI_API_KEY to .env)
 
-# Process an episode
-adn-cli process episode.mp4
+# 4. Check system health
+uv run adn doctor
+
+# 5. Process an episode end-to-end
+uv run adn process episode.mp4
 ```
+
+---
+
+## ⚡ CLI Commands
+
+| Command | Description |
+| :--- | :--- |
+| `uv run adn process <file>` | Full pipeline: Transcribe -> Analyze -> 16:9 Clips -> 9:16 Shorts |
+| `uv run adn transcribe <file>` | Generates Spanish transcript (`.json`, `.txt`, `.srt`) |
+| `uv run adn analyze <transcript.json>` | Generates 10 YouTube titles, chapters, show notes & clip ideas |
+| `uv run adn cut <video> <analysis.json>` | Slices standalone 16:9 mini-episodes (Lex style) |
+| `uv run adn shorts <video> <analysis.json> <transcript.json>` | Renders 9:16 vertical shorts with dynamic karaoke subtitles |
+| `uv run adn doctor` | Checks FFmpeg status and API key setup |
+

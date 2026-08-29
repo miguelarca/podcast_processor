@@ -21,20 +21,25 @@ This skill teaches Antigravity how to manage and execute the post-production pip
 
 ## 🛠️ CLI Quick Reference
 
-All commands run inside the virtual environment (`.venv`):
-
+### Using `uv` (Recommended):
 ```bash
 # 1. Full Pipeline (Transcribe -> Analyze -> 16:9 Clips -> 9:16 Shorts)
-source .venv/bin/activate && adn process /path/to/episode.mp4
+uv run adn process /path/to/episode.mp4
 
 # 2. Step-by-Step Execution
-source .venv/bin/activate && adn transcribe /path/to/episode.mp4
-source .venv/bin/activate && adn analyze output/<episode>/<episode>_transcript.json
-source .venv/bin/activate && adn cut /path/to/episode.mp4 output/<episode>/<episode>_analysis.json
-source .venv/bin/activate && adn shorts /path/to/episode.mp4 output/<episode>/<episode>_analysis.json output/<episode>/<episode>_transcript.json
+uv run adn transcribe /path/to/episode.mp4
+uv run adn analyze output/<episode>/<episode>_transcript.json
+uv run adn cut /path/to/episode.mp4 output/<episode>/<episode>_analysis.json
+uv run adn shorts /path/to/episode.mp4 output/<episode>/<episode>_analysis.json output/<episode>/<episode>_transcript.json
 
 # 3. Health & Configuration Check
-source .venv/bin/activate && adn doctor
+uv run adn doctor
+```
+
+### Or using activated `.venv`:
+```bash
+source .venv/bin/activate
+adn process /path/to/episode.mp4
 ```
 
 ---
