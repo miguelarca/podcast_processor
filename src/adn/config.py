@@ -21,6 +21,8 @@ class Settings(BaseSettings):
 
     # Processing Defaults
     DEFAULT_LLM_PROVIDER: Literal["gemini", "openai"] = "gemini"
+    GEMINI_MODEL: str = "gemini-3.6-flash"
+    OPENAI_MODEL: str = "gpt-4o"
     DEFAULT_TRANSCRIPTION_BACKEND: Literal["faster-whisper", "groq", "openai"] = "faster-whisper"
     WHISPER_MODEL_SIZE: str = "medium"  # "base", "small", "medium", "large-v3"
     WHISPER_DEVICE: str = "auto"  # "auto", "cpu", "cuda"

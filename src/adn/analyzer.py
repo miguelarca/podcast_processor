@@ -43,6 +43,7 @@ def analyze_with_gemini(transcript: Transcript) -> EpisodeAnalysis:
     """Run analysis using Google Gemini API with structured JSON output."""
     from google import genai
     from google.genai import types
+    from google.genai.errors import ClientError
 
     if not settings.GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY is not set in .env")
@@ -56,24 +57,45 @@ def analyze_with_gemini(transcript: Transcript) -> EpisodeAnalysis:
 {transcript_text}
 --- FIN TRANSCRIPCIÓN ---
 """
+    full_prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}"
 
-    console.print(f"[cyan]Analyzing transcript with Gemini 2.5 Flash...[/cyan]")
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=[
-            types.Content(
-                role="user",
-                parts=[types.Part.from_text(text=f"{SYSTEM_PROMPT}\n\n{user_prompt}")]
+    candidate_models = [
+        settings.GEMINI_MODEL,
+        "gemini-3.6-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+    ]
+    # Deduplicate while preserving order
+    seen = set()
+    models_to_try = [m for m in candidate_models if not (m in seen or seen.add(m))]
+
+    last_error = None
+    for model_name in models_to_try:
+        try:
+            console.print(f"[cyan]Analyzing transcript with Gemini ({model_name})...[/cyan]")
+            response = client.models.generate_content(
+                model=model_name,
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=EpisodeAnalysis,
+                    temperature=0.4,
+                ),
             )
-        ],
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=EpisodeAnalysis,
-            temperature=0.4,
-        ),
-    )
+            return EpisodeAnalysis.model_validate_json(response.text)
+        except ClientError as e:
+            if e.code == 404:
+                console.print(f"[yellow]Model '{model_name}' not available, trying next fallback...[/yellow]")
+                last_error = e
+                continue
+            raise e
+        except Exception as e:
+            last_error = e
+            raise e
 
-    return EpisodeAnalysis.model_validate_json(response.text)
+    if last_error:
+        raise last_error
+    raise RuntimeError("Failed to generate analysis with available Gemini models.")
 
 
 def analyze_with_openai(transcript: Transcript) -> EpisodeAnalysis:
