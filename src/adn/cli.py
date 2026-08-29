@@ -143,6 +143,16 @@ def process(
             console.print("\n[bold magenta]Generating candidate shorts (9:16 + subtitles)...[/bold magenta]")
             generate_all_shorts(input_video=media_file, transcript=transcript, shorts=analysis.shorts, output_dir=target_out_dir)
 
+        # Step 5: Generate Thumbnail Concepts and Image Prompts
+        console.print("\n[bold cyan]Generating YouTube thumbnail concepts & prompts...[/bold cyan]")
+        try:
+            from adn.thumbnail import display_thumbnail_concepts, generate_thumbnail_concepts, save_thumbnail_pack
+            concepts = generate_thumbnail_concepts(analysis=analysis)
+            save_thumbnail_pack(concepts=concepts, output_dir=target_out_dir, base_name=base_name)
+            display_thumbnail_concepts(concepts)
+        except Exception as th_err:
+            console.print(f"[yellow]⚠️  Could not generate thumbnail concepts:[/yellow] {th_err}")
+
         console.print(f"\n[bold green]✨ Processing complete![/bold green] All files saved in: {target_out_dir}\n")
     except Exception as e:
         _handle_error(e)
@@ -310,6 +320,58 @@ def update_metadata(
     try:
         from adn.uploader import update_video_metadata
         update_video_metadata(video_id=video_id, title=title, description=description)
+    except Exception as e:
+        _handle_error(e)
+
+
+@app.command(name="thumbnail")
+def thumbnail_command(
+    analysis_file: Path = typer.Argument(..., help="Path to analysis.json"),
+    output_dir: Optional[Path] = typer.Option(None, "--output", "-o"),
+):
+    """🎨 Generate 3 high-CTR thumbnail concepts and ready-to-use Gemini prompts."""
+    try:
+        from adn.thumbnail import display_thumbnail_concepts, generate_thumbnail_concepts, save_thumbnail_pack
+
+        if not analysis_file.exists():
+            console.print(f"[red]Error: File not found:[/red] {analysis_file}")
+            raise typer.Exit(1)
+
+        with open(analysis_file, "r", encoding="utf-8") as f:
+            analysis = EpisodeAnalysis(**json.load(f))
+
+        target_out_dir = output_dir or analysis_file.parent
+        base_name = analysis_file.stem.replace("_analysis", "")
+        concepts = generate_thumbnail_concepts(analysis=analysis)
+        prompts_file = save_thumbnail_pack(concepts=concepts, output_dir=target_out_dir, base_name=base_name)
+        display_thumbnail_concepts(concepts)
+        console.print(f"\n[green]Saved Gemini image prompts to:[/green] [bold underline]{prompts_file}[/bold underline]\n")
+    except Exception as e:
+        _handle_error(e)
+
+
+@app.command(name="composite-thumbnail")
+def composite_thumbnail_command(
+    image_file: Path = typer.Argument(..., help="Path to raw or generated background image (.png / .jpg)"),
+    headline: str = typer.Option(..., "--headline", "-h", help="Bold uppercase headline (e.g. 'LA COMPASIÓN: ¿TIENE LÍMITES?')"),
+    subtext: Optional[str] = typer.Option(None, "--subtext", "-s", help="Optional supporting subtitle"),
+    output_path: Optional[Path] = typer.Option(None, "--output", "-o", help="Custom output image path"),
+):
+    """🖼️ Overlay ADN Divergente branding and high-impact typography onto any image."""
+    try:
+        from adn.thumbnail import create_thumbnail_composite
+
+        if not image_file.exists():
+            console.print(f"[red]Error: Image file not found:[/red] {image_file}")
+            raise typer.Exit(1)
+
+        target_out = output_path or (image_file.parent / f"{image_file.stem}_thumbnail.jpg")
+        create_thumbnail_composite(
+            background_image_path=image_file,
+            output_thumbnail_path=target_out,
+            headline_text=headline,
+            subtext=subtext,
+        )
     except Exception as e:
         _handle_error(e)
 
