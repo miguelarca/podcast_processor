@@ -42,8 +42,7 @@ def _prepare_transcript_text_with_timestamps(transcript: Transcript) -> str:
 def analyze_with_gemini(transcript: Transcript) -> EpisodeAnalysis:
     """Run analysis using Google Gemini API with structured JSON output."""
     from google import genai
-    from google.genai import types
-    from google.genai.errors import ClientError
+    from google.genai.errors import APIError, ClientError, ServerError
 
     if not settings.GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY is not set in .env")
@@ -64,12 +63,13 @@ def analyze_with_gemini(transcript: Transcript) -> EpisodeAnalysis:
         "gemini-3.6-flash",
         "gemini-2.0-flash",
         "gemini-1.5-flash",
+        "gemini-1.5-pro",
     ]
     # Deduplicate while preserving order
     seen = set()
     models_to_try = [m for m in candidate_models if not (m in seen or seen.add(m))]
 
-    last_error = None
+    last_error_message = None
     for model_name in models_to_try:
         try:
             console.print(f"[cyan]Analyzing transcript with Gemini ({model_name})...[/cyan]")
@@ -83,19 +83,29 @@ def analyze_with_gemini(transcript: Transcript) -> EpisodeAnalysis:
                 ),
             )
             return EpisodeAnalysis.model_validate_json(response.text)
-        except ClientError as e:
-            if e.code == 404:
-                console.print(f"[yellow]Model '{model_name}' not available, trying next fallback...[/yellow]")
-                last_error = e
-                continue
-            raise e
-        except Exception as e:
-            last_error = e
-            raise e
+        except (ClientError, ServerError, APIError) as e:
+            code = getattr(e, "code", getattr(e, "status_code", 500))
+            if code == 503:
+                reason = "temporarily high demand / service unavailable"
+            elif code == 429:
+                reason = "rate limit reached"
+            elif code == 404:
+                reason = "model not found"
+            else:
+                reason = str(e)
 
-    if last_error:
-        raise last_error
-    raise RuntimeError("Failed to generate analysis with available Gemini models.")
+            console.print(f"[yellow]⚠️  Gemini ({model_name}) was unavailable ({reason}). Trying fallback model...[/yellow]")
+            last_error_message = f"Gemini API error ({code}): {reason}"
+            continue
+        except Exception as e:
+            last_error_message = str(e)
+            console.print(f"[yellow]⚠️  Unexpected error on ({model_name}): {e}. Trying fallback...[/yellow]")
+            continue
+
+    raise RuntimeError(
+        f"All Gemini models failed to generate analysis.\nLast error: {last_error_message}\n"
+        "Suggestion: Check your GEMINI_API_KEY in .env or try again in a few moments."
+    )
 
 
 def analyze_with_openai(transcript: Transcript) -> EpisodeAnalysis:

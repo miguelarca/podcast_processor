@@ -66,6 +66,30 @@ def _display_analysis_summary(analysis: EpisodeAnalysis):
     console.print(table_shorts)
 
 
+def _handle_error(err: Exception):
+    """Render a clean, user-friendly error panel instead of an unformatted traceback."""
+    console.print()
+    err_msg = str(err).strip()
+
+    # Detect common causes to give helpful hints
+    hint = "Check your configuration with [bold cyan]adn doctor[/bold cyan]."
+    if "API_KEY" in err_msg or "401" in err_msg or "UNAUTHENTICATED" in err_msg:
+        hint = "Verify that your API keys are correctly set in the [bold].env[/bold] file."
+    elif "503" in err_msg or "UNAVAILABLE" in err_msg:
+        hint = "The AI service is experiencing a temporary spike in traffic. Wait a moment and try again."
+    elif "FFmpeg" in err_msg:
+        hint = "Make sure FFmpeg is installed via Homebrew: [bold cyan]brew install ffmpeg[/bold cyan]."
+
+    console.print(
+        Panel(
+            f"[bold red]❌ Error:[/bold red] {err_msg}\n\n[dim]💡 Tip: {hint}[/dim]",
+            title="⚠️ ADN Divergente Pipeline Notice",
+            border_style="red",
+        )
+    )
+    raise typer.Exit(code=1)
+
+
 @app.command()
 def process(
     media_file: Path = typer.Argument(..., help="Path to raw Riverside recording (.mp4, .mov, .wav, etc.)"),
@@ -76,36 +100,39 @@ def process(
     skip_shorts: bool = typer.Option(False, "--skip-shorts", help="Skip generating 9:16 vertical shorts"),
 ):
     """🚀 Run the full pipeline: Transcribe -> Analyze -> Generate Metadata -> Cut Clips -> Generate Shorts."""
-    if not media_file.exists():
-        console.print(f"[red]Error: Media file not found:[/red] {media_file}")
-        raise typer.Exit(1)
+    try:
+        if not media_file.exists():
+            console.print(f"[red]Error: Media file not found:[/red] {media_file}")
+            raise typer.Exit(1)
 
-    base_name = media_file.stem
-    target_out_dir = output_dir or (settings.DEFAULT_OUTPUT_DIR / base_name)
-    target_out_dir.mkdir(parents=True, exist_ok=True)
+        base_name = media_file.stem
+        target_out_dir = output_dir or (settings.DEFAULT_OUTPUT_DIR / base_name)
+        target_out_dir.mkdir(parents=True, exist_ok=True)
 
-    console.print(Panel(f"[bold cyan]Processing Episode:[/bold cyan] {media_file.name}\n[bold]Output Directory:[/bold] {target_out_dir}", title="ADN Divergente Processor"))
+        console.print(Panel(f"[bold cyan]Processing Episode:[/bold cyan] {media_file.name}\n[bold]Output Directory:[/bold] {target_out_dir}", title="ADN Divergente Processor"))
 
-    # Step 1: Transcribe
-    transcript = run_transcription(input_file=media_file, output_dir=target_out_dir, backend=backend)
+        # Step 1: Transcribe
+        transcript = run_transcription(input_file=media_file, output_dir=target_out_dir, backend=backend)
 
-    # Step 2: Analyze
-    analysis = run_analysis(transcript=transcript, output_dir=target_out_dir, base_name=base_name, provider=provider)
+        # Step 2: Analyze
+        analysis = run_analysis(transcript=transcript, output_dir=target_out_dir, base_name=base_name, provider=provider)
 
-    # Render summary in terminal
-    _display_analysis_summary(analysis)
+        # Render summary in terminal
+        _display_analysis_summary(analysis)
 
-    # Step 3: Cut 16:9 Clips
-    if not skip_cuts and media_file.suffix.lower() in [".mp4", ".mov", ".mkv", ".webm"]:
-        console.print("\n[bold cyan]Cutting candidate clips (16:9)...[/bold cyan]")
-        cut_all_clips(input_video=media_file, clips=analysis.clips, output_dir=target_out_dir)
+        # Step 3: Cut 16:9 Clips
+        if not skip_cuts and media_file.suffix.lower() in [".mp4", ".mov", ".mkv", ".webm"]:
+            console.print("\n[bold cyan]Cutting candidate clips (16:9)...[/bold cyan]")
+            cut_all_clips(input_video=media_file, clips=analysis.clips, output_dir=target_out_dir)
 
-    # Step 4: Generate 9:16 Shorts with Subtitles
-    if not skip_shorts and media_file.suffix.lower() in [".mp4", ".mov", ".mkv", ".webm"]:
-        console.print("\n[bold magenta]Generating candidate shorts (9:16 + subtitles)...[/bold magenta]")
-        generate_all_shorts(input_video=media_file, transcript=transcript, shorts=analysis.shorts, output_dir=target_out_dir)
+        # Step 4: Generate 9:16 Shorts with Subtitles
+        if not skip_shorts and media_file.suffix.lower() in [".mp4", ".mov", ".mkv", ".webm"]:
+            console.print("\n[bold magenta]Generating candidate shorts (9:16 + subtitles)...[/bold magenta]")
+            generate_all_shorts(input_video=media_file, transcript=transcript, shorts=analysis.shorts, output_dir=target_out_dir)
 
-    console.print(f"\n[bold green]✨ Processing complete![/bold green] All files saved in: {target_out_dir}\n")
+        console.print(f"\n[bold green]✨ Processing complete![/bold green] All files saved in: {target_out_dir}\n")
+    except Exception as e:
+        _handle_error(e)
 
 
 @app.command()
@@ -115,9 +142,12 @@ def transcribe(
     backend: Optional[str] = typer.Option(None, "--backend", "-b", help="faster-whisper | groq"),
 ):
     """📝 Transcribe audio/video to JSON, TXT, and SRT subtitles."""
-    target_out_dir = output_dir or (settings.DEFAULT_OUTPUT_DIR / media_file.stem)
-    transcript = run_transcription(input_file=media_file, output_dir=target_out_dir, backend=backend)
-    console.print(f"[green]Transcription finished ({transcript.duration / 60:.1f} minutes).[/green]")
+    try:
+        target_out_dir = output_dir or (settings.DEFAULT_OUTPUT_DIR / media_file.stem)
+        transcript = run_transcription(input_file=media_file, output_dir=target_out_dir, backend=backend)
+        console.print(f"[green]Transcription finished ({transcript.duration / 60:.1f} minutes).[/green]")
+    except Exception as e:
+        _handle_error(e)
 
 
 @app.command()
@@ -127,18 +157,21 @@ def analyze(
     provider: Optional[str] = typer.Option(None, "--provider", "-p", help="gemini | openai"),
 ):
     """🧠 Generate titles, chapters, description, and clip candidates from an existing transcript."""
-    if not transcript_file.exists():
-        console.print(f"[red]Error:[/red] File not found {transcript_file}")
-        raise typer.Exit(1)
+    try:
+        if not transcript_file.exists():
+            console.print(f"[red]Error:[/red] File not found {transcript_file}")
+            raise typer.Exit(1)
 
-    with open(transcript_file, "r", encoding="utf-8") as f:
-        data = json.load(f)
-        transcript = Transcript(**data)
+        with open(transcript_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            transcript = Transcript(**data)
 
-    target_out_dir = output_dir or transcript_file.parent
-    base_name = transcript_file.stem.replace("_transcript", "")
-    analysis = run_analysis(transcript=transcript, output_dir=target_out_dir, base_name=base_name, provider=provider)
-    _display_analysis_summary(analysis)
+        target_out_dir = output_dir or transcript_file.parent
+        base_name = transcript_file.stem.replace("_transcript", "")
+        analysis = run_analysis(transcript=transcript, output_dir=target_out_dir, base_name=base_name, provider=provider)
+        _display_analysis_summary(analysis)
+    except Exception as e:
+        _handle_error(e)
 
 
 @app.command()
@@ -148,11 +181,14 @@ def cut(
     output_dir: Optional[Path] = typer.Option(None, "--output", "-o"),
 ):
     """✂️ Cut 16:9 candidate clips using an existing analysis.json file."""
-    with open(analysis_file, "r", encoding="utf-8") as f:
-        analysis = EpisodeAnalysis(**json.load(f))
+    try:
+        with open(analysis_file, "r", encoding="utf-8") as f:
+            analysis = EpisodeAnalysis(**json.load(f))
 
-    target_out_dir = output_dir or analysis_file.parent
-    cut_all_clips(input_video=video_file, clips=analysis.clips, output_dir=target_out_dir)
+        target_out_dir = output_dir or analysis_file.parent
+        cut_all_clips(input_video=video_file, clips=analysis.clips, output_dir=target_out_dir)
+    except Exception as e:
+        _handle_error(e)
 
 
 @app.command()
@@ -163,13 +199,16 @@ def shorts(
     output_dir: Optional[Path] = typer.Option(None, "--output", "-o"),
 ):
     """📱 Generate 9:16 vertical shorts with burned-in dynamic subtitles."""
-    with open(analysis_file, "r", encoding="utf-8") as f:
-        analysis = EpisodeAnalysis(**json.load(f))
-    with open(transcript_file, "r", encoding="utf-8") as f:
-        transcript = Transcript(**json.load(f))
+    try:
+        with open(analysis_file, "r", encoding="utf-8") as f:
+            analysis = EpisodeAnalysis(**json.load(f))
+        with open(transcript_file, "r", encoding="utf-8") as f:
+            transcript = Transcript(**json.load(f))
 
-    target_out_dir = output_dir or analysis_file.parent
-    generate_all_shorts(input_video=video_file, transcript=transcript, shorts=analysis.shorts, output_dir=target_out_dir)
+        target_out_dir = output_dir or analysis_file.parent
+        generate_all_shorts(input_video=video_file, transcript=transcript, shorts=analysis.shorts, output_dir=target_out_dir)
+    except Exception as e:
+        _handle_error(e)
 
 
 @app.command()
