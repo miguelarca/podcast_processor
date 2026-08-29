@@ -291,15 +291,25 @@ def upload_clips(
         from adn.uploader import upload_all_clips_batch
 
         target_dir = clips_dir or (analysis_file.parent / "clips")
-        if not target_dir.exists():
-            console.print(f"[red]Error: Clips directory not found:[/red] {target_dir}")
-            raise typer.Exit(1)
-
         upload_all_clips_batch(
             clips_dir=target_dir,
             analysis_path=analysis_file,
             privacy_status=privacy,
         )
+    except Exception as e:
+        _handle_error(e)
+
+
+@app.command(name="update-metadata")
+def update_metadata(
+    video_id: str = typer.Argument(..., help="YouTube Video ID (from the URL)"),
+    title: str = typer.Option(..., "--title", "-t", help="New title for the video"),
+    description: Optional[str] = typer.Option(None, "--description", "-d", help="New description for the video"),
+):
+    """✏️ Update title and description of an existing YouTube video."""
+    try:
+        from adn.uploader import update_video_metadata
+        update_video_metadata(video_id=video_id, title=title, description=description)
     except Exception as e:
         _handle_error(e)
 

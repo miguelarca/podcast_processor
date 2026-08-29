@@ -219,7 +219,12 @@ def upload_all_shorts_batch(
     with open(analysis_path, "r", encoding="utf-8") as f:
         analysis = EpisodeAnalysis(**json.load(f))
 
-    shorts_lookup = {sanitize_title(s.title): s for s in analysis.shorts}
+    # Map both 'short_01' / '01' and index to short objects
+    shorts_by_id = {}
+    for idx, s in enumerate(analysis.shorts, start=1):
+        shorts_by_id[f"short_{idx:02d}"] = s
+        shorts_by_id[s.id.lower().replace("-", "_")] = s
+
     video_files = sorted(list(shorts_dir.glob("short_*.mp4")))
 
     if not video_files:
@@ -231,24 +236,35 @@ def upload_all_shorts_batch(
     console.print(f"[bold magenta]Starting batch upload of {len(video_files)} YouTube Shorts...[/bold magenta]")
 
     for idx, short_file in enumerate(video_files, start=1):
-        # Match short metadata from analysis
-        title = f"Short {idx:02d} | ADN Divergente #shorts"
-        quote = ""
-        for clean_name, s in shorts_lookup.items():
-            if clean_name in short_file.name:
-                title = f"{s.title} #shorts"
-                quote = s.hook_quote
+        # 1. Match by prefix e.g. "short_01"
+        matched_short = None
+        for key in [f"short_{idx:02d}", f"short_{idx}"]:
+            if short_file.name.startswith(key):
+                matched_short = shorts_by_id.get(key)
                 break
 
+        # Fallback to index in list
+        if not matched_short and (idx - 1) < len(analysis.shorts):
+            matched_short = analysis.shorts[idx - 1]
+
+        if matched_short:
+            title = f"{matched_short.title} #shorts"[:100]
+            quote = matched_short.hook_quote
+        else:
+            title = f"{short_file.stem.replace('_', ' ').title()} #shorts"[:100]
+            quote = ""
+
         description = (
-            f"{quote}\n\n"
-            f"🎙️ Extracto del podcast ADN Divergente.\n"
-            f"Suscríbete para más episodios completos y reflexiones candidas.\n\n"
+            f"⚡ \"{quote}\"\n\n"
+            f"🎙️ Extracto del podcast ADN Divergente con Miguel y su hermano.\n"
+            f"Conversaciones francas y directas sobre temas sociales, culturales y económicos.\n\n"
+            f"🔔 ¡Suscríbete al canal para más reflexiones y episodios completos!\n"
+            f"https://www.youtube.com/@ADNDivergente\n\n"
             f"#shorts #ADNDivergente #Podcast #Reflexion #Debate"
         )
         tags = ["ADN Divergente", "Shorts", "Podcast", "Viral", "YouTube Shorts"]
 
-        console.print(f"\n[{idx}/{len(video_files)}] Uploading Short: {short_file.name}")
+        console.print(f"\n[{idx}/{len(video_files)}] Uploading Short: [bold yellow]{title}[/bold yellow]")
         vid_id = upload_video(
             youtube=youtube,
             video_path=short_file,
@@ -271,7 +287,12 @@ def upload_all_clips_batch(
     with open(analysis_path, "r", encoding="utf-8") as f:
         analysis = EpisodeAnalysis(**json.load(f))
 
-    clips_lookup = {sanitize_title(c.title): c for c in analysis.clips}
+    # Map both 'clip_01' / '01' and index to clip objects
+    clips_by_id = {}
+    for idx, c in enumerate(analysis.clips, start=1):
+        clips_by_id[f"clip_{idx:02d}"] = c
+        clips_by_id[c.id.lower().replace("-", "_")] = c
+
     video_files = sorted(list(clips_dir.glob("clip_*.mp4")))
 
     if not video_files:
@@ -283,16 +304,25 @@ def upload_all_clips_batch(
     console.print(f"[bold cyan]Starting batch upload of {len(video_files)} standalone 16:9 clips...[/bold cyan]")
 
     for idx, clip_file in enumerate(video_files, start=1):
-        # Match clip metadata from analysis
-        title = f"Clip {idx:02d} | ADN Divergente"
-        hook = ""
-        summary = ""
-        for clean_name, c in clips_lookup.items():
-            if clean_name in clip_file.name:
-                title = f"{c.title} | ADN Divergente"
-                hook = c.hook
-                summary = c.summary
+        # 1. Match by prefix e.g. "clip_01"
+        matched_clip = None
+        for key in [f"clip_{idx:02d}", f"clip_{idx}"]:
+            if clip_file.name.startswith(key):
+                matched_clip = clips_by_id.get(key)
                 break
+
+        # Fallback to index in list
+        if not matched_clip and (idx - 1) < len(analysis.clips):
+            matched_clip = analysis.clips[idx - 1]
+
+        if matched_clip:
+            title = f"{matched_clip.title} | ADN Divergente"[:100]
+            hook = matched_clip.hook
+            summary = matched_clip.summary
+        else:
+            title = f"{clip_file.stem.replace('_', ' ').title()} | ADN Divergente"[:100]
+            hook = ""
+            summary = ""
 
         description = (
             f"⚡ {hook}\n\n"
@@ -305,7 +335,7 @@ def upload_all_clips_batch(
         )
         tags = list(set(["ADN Divergente", "Clips", "Podcast", "Debate"] + analysis.core_themes[:6]))
 
-        console.print(f"\n[{idx}/{len(video_files)}] Uploading Clip: {clip_file.name}")
+        console.print(f"\n[{idx}/{len(video_files)}] Uploading Clip: [bold yellow]{title}[/bold yellow]")
         vid_id = upload_video(
             youtube=youtube,
             video_path=clip_file,
@@ -319,7 +349,25 @@ def upload_all_clips_batch(
     return uploaded_ids
 
 
-def sanitize_title(title: str) -> str:
-    import re
-    s = re.sub(r"[^\w\s-]", "", title).strip().lower()
-    return re.sub(r"[-\s]+", "_", s)[:40]
+def update_video_metadata(
+    video_id: str,
+    title: str,
+    description: Optional[str] = None
+):
+    """Update title and description of an already-uploaded video on YouTube."""
+    youtube = get_youtube_service()
+    res = youtube.videos().list(part="snippet", id=video_id).execute()
+    items = res.get("items", [])
+    if not items:
+        raise ValueError(f"Video {video_id} not found on YouTube.")
+
+    snippet = items[0]["snippet"]
+    snippet["title"] = title[:100]
+    if description:
+        snippet["description"] = description
+
+    youtube.videos().update(
+        part="snippet",
+        body={"id": video_id, "snippet": snippet}
+    ).execute()
+    console.print(f"[green]✓ Successfully updated YouTube video:[/green] [bold yellow]{title}[/bold yellow] (https://youtu.be/{video_id})")
