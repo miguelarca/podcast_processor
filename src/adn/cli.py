@@ -12,6 +12,7 @@ from adn.analyzer import run_analysis
 from adn.config import settings
 from adn.cutter import cut_all_clips
 from adn.models import EpisodeAnalysis, Transcript
+from adn.shorts import generate_all_shorts
 from adn.transcriber import run_transcription
 
 app = typer.Typer(
@@ -45,7 +46,7 @@ def _display_analysis_summary(analysis: EpisodeAnalysis):
     console.print(table_chapters)
 
     # Clips Table
-    table_clips = Table(title="✂️ Clips / Mini-Episodios Recomendados", border_style="yellow")
+    table_clips = Table(title="✂️ Clips / Mini-Episodios Recomendados (16:9)", border_style="yellow")
     table_clips.add_column("ID", style="dim", width=8)
     table_clips.add_column("Título del Clip", style="bold")
     table_clips.add_column("Duración", style="green", width=10)
@@ -54,6 +55,16 @@ def _display_analysis_summary(analysis: EpisodeAnalysis):
         table_clips.add_row(c.id, c.title, c.duration_formatted, c.hook)
     console.print(table_clips)
 
+    # Shorts Table
+    table_shorts = Table(title="📱 Shorts / Reels / TikTok (9:16)", border_style="magenta")
+    table_shorts.add_column("ID", style="dim", width=8)
+    table_shorts.add_column("Título", style="bold")
+    table_shorts.add_column("Duración", style="green", width=10)
+    table_shorts.add_column("Cita Gancho", style="white")
+    for s in analysis.shorts:
+        table_shorts.add_row(s.id, s.title, f"{s.duration_seconds:.1f}s", s.hook_quote)
+    console.print(table_shorts)
+
 
 @app.command()
 def process(
@@ -61,9 +72,10 @@ def process(
     output_dir: Optional[Path] = typer.Option(None, "--output", "-o", help="Custom output directory"),
     backend: Optional[str] = typer.Option(None, "--whisper-backend", "-w", help="Transcription backend: faster-whisper | groq"),
     provider: Optional[str] = typer.Option(None, "--llm-provider", "-p", help="LLM provider: gemini | openai"),
-    skip_cuts: bool = typer.Option(False, "--skip-cuts", help="Skip cutting video clips, only generate metadata"),
+    skip_cuts: bool = typer.Option(False, "--skip-cuts", help="Skip cutting 16:9 video clips"),
+    skip_shorts: bool = typer.Option(False, "--skip-shorts", help="Skip generating 9:16 vertical shorts"),
 ):
-    """🚀 Run the full pipeline: Transcribe -> Analyze -> Generate Metadata -> Cut 16:9 Clips."""
+    """🚀 Run the full pipeline: Transcribe -> Analyze -> Generate Metadata -> Cut Clips -> Generate Shorts."""
     if not media_file.exists():
         console.print(f"[red]Error: Media file not found:[/red] {media_file}")
         raise typer.Exit(1)
@@ -83,10 +95,15 @@ def process(
     # Render summary in terminal
     _display_analysis_summary(analysis)
 
-    # Step 3: Cut Clips
+    # Step 3: Cut 16:9 Clips
     if not skip_cuts and media_file.suffix.lower() in [".mp4", ".mov", ".mkv", ".webm"]:
-        console.print("\n[bold cyan]Cutting candidate clips...[/bold cyan]")
+        console.print("\n[bold cyan]Cutting candidate clips (16:9)...[/bold cyan]")
         cut_all_clips(input_video=media_file, clips=analysis.clips, output_dir=target_out_dir)
+
+    # Step 4: Generate 9:16 Shorts with Subtitles
+    if not skip_shorts and media_file.suffix.lower() in [".mp4", ".mov", ".mkv", ".webm"]:
+        console.print("\n[bold magenta]Generating candidate shorts (9:16 + subtitles)...[/bold magenta]")
+        generate_all_shorts(input_video=media_file, transcript=transcript, shorts=analysis.shorts, output_dir=target_out_dir)
 
     console.print(f"\n[bold green]✨ Processing complete![/bold green] All files saved in: {target_out_dir}\n")
 
@@ -136,6 +153,23 @@ def cut(
 
     target_out_dir = output_dir or analysis_file.parent
     cut_all_clips(input_video=video_file, clips=analysis.clips, output_dir=target_out_dir)
+
+
+@app.command()
+def shorts(
+    video_file: Path = typer.Argument(..., help="Path to source video file"),
+    analysis_file: Path = typer.Argument(..., help="Path to analysis.json"),
+    transcript_file: Path = typer.Argument(..., help="Path to transcript.json"),
+    output_dir: Optional[Path] = typer.Option(None, "--output", "-o"),
+):
+    """📱 Generate 9:16 vertical shorts with burned-in dynamic subtitles."""
+    with open(analysis_file, "r", encoding="utf-8") as f:
+        analysis = EpisodeAnalysis(**json.load(f))
+    with open(transcript_file, "r", encoding="utf-8") as f:
+        transcript = Transcript(**json.load(f))
+
+    target_out_dir = output_dir or analysis_file.parent
+    generate_all_shorts(input_video=video_file, transcript=transcript, shorts=analysis.shorts, output_dir=target_out_dir)
 
 
 @app.command()
