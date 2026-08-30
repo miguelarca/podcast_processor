@@ -243,6 +243,8 @@ function selectActiveTitle(title) {
   showToast(`Título seleccionado: "${title}"`);
 }
 
+let activeClipIndex = null;
+
 // Render 16:9 Clips
 function renderClips(clipsFiles, clipsMeta) {
   const grid = document.getElementById("clipsGrid");
@@ -262,29 +264,37 @@ function renderClips(clipsFiles, clipsMeta) {
     const meta = clipsMeta[i] || {};
     const card = document.createElement("div");
     card.className = "bg-brand-card border border-brand-border rounded-xl overflow-hidden flex flex-col";
+    
+    const hasThumb = !!clip.thumbnail_url;
+    const thumbBadge = hasThumb 
+      ? `<span class="flex items-center space-x-1 text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded text-[11px] font-semibold"><i data-lucide="check-circle-2" class="w-3 h-3"></i><span>Miniatura Asignada</span></span>`
+      : `<span class="text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded text-[11px]">Sin miniatura</span>`;
+
     card.innerHTML = `
-      <div class="bg-black aspect-video relative">
-        <video controls src="${clip.url}" class="w-full h-full object-contain"></video>
+      <div class="bg-black aspect-video relative group">
+        <video controls poster="${clip.thumbnail_url || ''}" src="${clip.url}" class="w-full h-full object-contain"></video>
+        ${hasThumb ? `<div class="absolute top-2 right-2 flex items-center space-x-1 bg-black/80 backdrop-blur-sm border border-amber-500/50 rounded-lg p-1 shadow-xl"><img src="${clip.thumbnail_url}" class="w-20 aspect-video object-cover rounded"><span class="text-[9px] text-amber-400 font-bold px-1 uppercase">Miniatura</span></div>` : ''}
       </div>
       <div class="p-5 flex-1 flex flex-col justify-between space-y-4">
         <div>
           <div class="flex items-center justify-between text-xs text-zinc-500 mb-1">
             <span class="font-mono text-cyan-400 font-semibold">Clip #${i + 1}</span>
-            <span>${clip.filename}</span>
+            ${thumbBadge}
           </div>
           <h4 class="font-bold text-sm text-white">${meta.title || clip.filename}</h4>
           <p class="text-xs text-zinc-400 mt-1.5 leading-relaxed">${meta.hook || meta.summary || ""}</p>
         </div>
         <div class="pt-3 border-t border-brand-border/60 flex items-center justify-between">
-          <button onclick="designClipThumbnail(${i})" class="flex items-center space-x-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/40 text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+          <button onclick="designClipThumbnail(${i})" class="flex items-center space-x-1.5 ${hasThumb ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700' : 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/40'} text-xs font-semibold px-3 py-1.5 rounded-lg transition">
             <i data-lucide="image" class="w-3.5 h-3.5"></i>
-            <span>Diseñar Miniatura para este Clip</span>
+            <span>${hasThumb ? 'Editar / Cambiar Miniatura' : 'Diseñar Miniatura para este Clip'}</span>
           </button>
         </div>
       </div>
     `;
     grid.appendChild(card);
   });
+  lucide.createIcons();
 }
 
 function setCanvasLoading(show, title = "Generando con IA...", subtext = "Renderizando en GPU Apple Silicon") {
@@ -305,6 +315,7 @@ function setCanvasLoading(show, title = "Generando con IA...", subtext = "Render
 }
 
 function designEpisodeThumbnail() {
+  activeClipIndex = null;
   switchTab("thumbnails");
   const activeTitle = document.getElementById("epHeaderTitle").textContent;
   document.getElementById("thumbHeadlineInput").value = activeTitle;
@@ -320,6 +331,7 @@ function designEpisodeThumbnail() {
 
 async function designClipThumbnail(clipIndex) {
   if (!currentEpisode || !currentEpisode.analysis?.clips) return;
+  activeClipIndex = clipIndex;
   const clip = currentEpisode.analysis.clips[clipIndex] || {};
   
   // Switch to thumbnails tab
@@ -358,7 +370,7 @@ async function designClipThumbnail(clipIndex) {
       }
       updateLiveCanvas();
       
-      // Now auto trigger FLUX local render with the new prompt
+      // Auto trigger FLUX render
       await triggerFluxRender();
     } else {
       setCanvasLoading(false);
@@ -651,6 +663,32 @@ async function triggerFluxRender() {
         showToast("¡Imagen generada con FLUX.1 exitosamente!");
         selectThumbnailBackground(sData.url, sData.path);
         appendBackgroundToGallery(sData.url, sData.path);
+
+        if (activeClipIndex !== null && currentEpisode?.clips?.[activeClipIndex]) {
+          const clip = currentEpisode.clips[activeClipIndex];
+          setTimeout(async () => {
+            const canvas = document.getElementById("thumbCanvas");
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
+            try {
+              const saveRes = await fetch("/api/thumbnails/save-to-clip", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  clip_path: clip.path,
+                  image_data_url: dataUrl,
+                })
+              });
+              if (saveRes.ok) {
+                const saveJson = await saveRes.json();
+                clip.thumbnail_url = saveJson.url;
+                renderClips(currentEpisode.clips, currentEpisode.analysis?.clips || []);
+                showToast("✓ Miniatura asignada y guardada para el Clip");
+              }
+            } catch (err) {
+              console.error("Failed to save clip thumbnail:", err);
+            }
+          }, 400);
+        }
       } else if (sData.status === "failed") {
         clearInterval(interval);
         btn.disabled = false;

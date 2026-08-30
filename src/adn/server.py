@@ -155,13 +155,36 @@ def get_episode_details(episode_id: str, path: Optional[str] = None):
 
     # Locate 16:9 clips
     clips_dir = ep_dir / "clips"
+    thumbs_dir = ep_dir / "thumbnails"
     clips_list = []
     if clips_dir.exists():
         for clip_file in sorted(clips_dir.glob("clip_*.mp4")):
+            # Look for clip-specific thumbnail
+            thumb_match = None
+            for ext in [".jpg", ".png"]:
+                candidate = clips_dir / f"{clip_file.stem}_thumb{ext}"
+                if candidate.exists() and not candidate.name.startswith("."):
+                    thumb_match = candidate
+                    break
+                candidate2 = clips_dir / f"{clip_file.stem}{ext}"
+                if candidate2.exists() and not candidate2.name.startswith("."):
+                    thumb_match = candidate2
+                    break
+            
+            # If not in clips_dir, check thumbnails_dir
+            if not thumb_match and thumbs_dir.exists():
+                prefix = clip_file.name[:7] # e.g. clip_01
+                for tf in thumbs_dir.glob(f"*{prefix}*"):
+                    if not tf.name.startswith(".") and tf.suffix.lower() in [".jpg", ".png"]:
+                        thumb_match = tf
+                        break
+
             clips_list.append({
                 "filename": clip_file.name,
                 "path": str(clip_file),
                 "url": f"/api/media/stream?path={clip_file}",
+                "thumbnail_path": str(thumb_match) if thumb_match else None,
+                "thumbnail_url": f"/api/media/stream?path={thumb_match}" if thumb_match else None,
             })
 
     # Locate 9:16 vertical shorts
@@ -345,6 +368,37 @@ def composite_thumbnail(payload: CompositeThumbnailPayload):
         "status": "success",
         "path": str(result),
         "url": f"/api/media/stream?path={result}&t={os.path.getmtime(result)}",
+    }
+
+
+class SaveThumbnailToClipPayload(BaseModel):
+    clip_path: str
+    image_data_url: str
+
+
+@app.post("/api/thumbnails/save-to-clip")
+def save_thumbnail_to_clip(payload: SaveThumbnailToClipPayload):
+    """Save the canvas rendered thumbnail permanently for a specific clip."""
+    import base64
+    clip_p = Path(payload.clip_path)
+    if not clip_p.exists():
+        raise HTTPException(status_code=404, detail="Clip video file not found")
+
+    out_thumb = clip_p.parent / f"{clip_p.stem}_thumb.jpg"
+    
+    if "," in payload.image_data_url:
+        b64_data = payload.image_data_url.split(",", 1)[1]
+    else:
+        b64_data = payload.image_data_url
+
+    img_bytes = base64.b64decode(b64_data)
+    with open(out_thumb, "wb") as f:
+        f.write(img_bytes)
+
+    return {
+        "status": "saved",
+        "path": str(out_thumb),
+        "url": f"/api/media/stream?path={out_thumb}&t={os.path.getmtime(out_thumb)}",
     }
 
 
