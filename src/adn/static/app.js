@@ -447,8 +447,26 @@ function selectThumbnailBackground(url, path) {
   currentBgPath = path;
   currentBgImage = new Image();
   currentBgImage.crossOrigin = "anonymous";
+  currentBgImage.onload = () => {
+    updateLiveCanvas();
+  };
+  currentBgImage.onerror = () => {
+    console.error("Failed to load thumbnail background image:", url);
+  };
   currentBgImage.src = url;
-  currentBgImage.onload = () => updateLiveCanvas();
+}
+
+function appendBackgroundToGallery(url, path) {
+  const list = document.getElementById("thumbBackgroundsList");
+  const count = list.children.length + 1;
+  const item = document.createElement("div");
+  item.className = "flex-shrink-0 w-28 aspect-video rounded-lg overflow-hidden border-2 border-amber-400 cursor-pointer transition relative shadow-lg";
+  item.onclick = () => selectThumbnailBackground(url, path);
+  item.innerHTML = `
+    <img src="${url}" class="w-full h-full object-cover">
+    <span class="absolute bottom-1 right-1 text-[9px] bg-black/80 px-1 rounded text-white font-mono">#${count}</span>
+  `;
+  list.insertBefore(item, list.firstChild);
 }
 
 // Live Canvas Text Rendering Engine
@@ -632,6 +650,7 @@ async function triggerFluxRender() {
         setCanvasLoading(false);
         showToast("¡Imagen generada con FLUX.1 exitosamente!");
         selectThumbnailBackground(sData.url, sData.path);
+        appendBackgroundToGallery(sData.url, sData.path);
       } else if (sData.status === "failed") {
         clearInterval(interval);
         btn.disabled = false;

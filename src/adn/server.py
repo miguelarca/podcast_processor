@@ -179,7 +179,10 @@ def get_episode_details(episode_id: str, path: Optional[str] = None):
     thumbs_dir = ep_dir / "thumbnails"
     thumbs_list = []
     if thumbs_dir.exists():
-        for thumb_file in sorted(thumbs_dir.glob("*.jpg")) + sorted(thumbs_dir.glob("*.png")):
+        raw_files = sorted(thumbs_dir.glob("*.jpg")) + sorted(thumbs_dir.glob("*.png"))
+        for thumb_file in raw_files:
+            if thumb_file.name.startswith(".") or thumb_file.stat().st_size < 1000:
+                continue
             thumbs_list.append({
                 "filename": thumb_file.name,
                 "path": str(thumb_file),
