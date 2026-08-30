@@ -51,11 +51,15 @@ uv run adn process episode.mp4
 | `uv run adn transcribe <file>` | Generates Spanish transcript (`.json`, `.txt`, `.srt`) |
 | `uv run adn analyze <transcript.json>` | Generates 10 YouTube titles, chapters, show notes & clip ideas |
 | `uv run adn cut <video> <analysis.json>` | Slices standalone 16:9 mini-episodes (Lex style) |
-| `uv run adn shorts <video> <analysis.json> <transcript.json>` | Renders 9:16 vertical shorts with dynamic karaoke subtitles |
+| `uv run adn thumbnail <analysis.json>` | 🎨 Generates concepts + renders local 16:9 thumbnails via FLUX.1 |
+| `uv run adn flux-render "<prompt>"` | ⚡ Generates any custom 16:9 image locally on Apple Silicon Metal GPU |
+| `uv run adn composite-thumbnail <img.png>` | 🖼️ Composites branding + auto-fitted 3D text onto any background |
 | `uv run adn upload <video> <analysis.json>` | 🚀 Uploads full video with title, chapters, description, CC to YouTube |
 | `uv run adn upload-shorts <analysis.json>` | 📱 Batch uploads all vertical shorts to YouTube Shorts |
+| `uv run adn upload-clips <analysis.json>` | ✂️ Batch uploads all standalone 16:9 mini-episodes to YouTube |
+| `uv run adn update-metadata <id> -t "..."` | ✏️ Updates title/description of existing YouTube videos via API |
 | `uv run adn auth` | Authenticates with YouTube Data API via browser OAuth |
-| `uv run adn doctor` | Checks FFmpeg, AI keys, and YouTube OAuth status |
+| `uv run adn doctor` | Checks FFmpeg, AI keys, FLUX.1 engine, and YouTube OAuth |
 
 ---
 

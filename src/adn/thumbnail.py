@@ -72,6 +72,48 @@ Opciones de títulos: {', '.join([t.title for t in analysis.title_options[:5]])}
     return pack.concepts
 
 
+def generate_local_flux_image(
+    prompt: str,
+    output_path: Path,
+    quantize: int = 4,
+    steps: int = 4,
+    width: int = 1280,
+    height: int = 720,
+) -> bool:
+    """Generate high quality 16:9 image locally on Apple Silicon Metal GPU via FLUX.1-schnell."""
+    import sys
+    import shutil
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    mflux_bin = Path(sys.executable).parent / "mflux-generate"
+    if not mflux_bin.exists():
+        mflux_str = shutil.which("mflux-generate")
+        if not mflux_str:
+            return False
+        mflux_bin = Path(mflux_str)
+
+    cmd = [
+        str(mflux_bin),
+        "--model", "schnell",
+        "--quantize", str(quantize),
+        "--prompt", prompt,
+        "--steps", str(steps),
+        "--width", str(width),
+        "--height", str(height),
+        "--output", str(output_path),
+    ]
+
+    console.print(f"  [cyan]⚡ Generating with local FLUX.1-schnell on Apple Silicon ({steps} steps, {quantize}-bit)...[/cyan]")
+    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if res.returncode == 0 and output_path.exists():
+        return True
+    else:
+        err_msg = res.stderr.strip() or res.stdout.strip()
+        if err_msg:
+            console.print(f"  [yellow]Local FLUX notice:[/yellow] {err_msg[:200]}")
+        return False
+
+
 def generate_single_image(prompt: str, output_path: Path) -> bool:
     """Attempt to generate an actual image file via Gemini or OpenAI APIs."""
     from google import genai
@@ -147,7 +189,10 @@ def generate_all_thumbnails(
     analysis: EpisodeAnalysis,
     output_dir: Path,
     base_name: str,
-    auto_render_images: bool = True
+    auto_render_images: bool = True,
+    use_local_flux: bool = True,
+    flux_quantize: int = 4,
+    flux_count: int = 1,
 ) -> Path:
     """Master orchestrator for thumbnail concept ideation, generation, and compositing."""
     thumbs_dir = output_dir / "thumbnails"
@@ -158,15 +203,34 @@ def generate_all_thumbnails(
     display_thumbnail_concepts(concepts)
 
     if auto_render_images:
-        console.print("\n[cyan]Attempting direct AI image generation for thumbnail concepts...[/cyan]")
+        console.print("\n[bold cyan]Generating thumbnail images and composites...[/bold cyan]")
         successful_renders = 0
 
-        for i, c in enumerate(concepts, 1):
-            raw_img_path = thumbs_dir / f"thumb_{i:02d}_background.png"
+        # Limit count if desired (default renders concept 1 or up to flux_count)
+        concepts_to_render = concepts[:flux_count]
+
+        for i, c in enumerate(concepts_to_render, 1):
+            raw_img_path = thumbs_dir / f"thumb_{i:02d}_flux_raw.png"
             final_thumb_path = thumbs_dir / f"thumb_{i:02d}_final.jpg"
 
-            console.print(f"  [{i}/{len(concepts)}] Generating image for: '{c.headline_text}'...")
-            if generate_single_image(prompt=c.gemini_prompt, output_path=raw_img_path):
+            console.print(f"\n[bold magenta][{i}/{len(concepts_to_render)}] Rendering: '{c.headline_text}'[/bold magenta]")
+            generated = False
+
+            # 1. First priority: Local Apple Silicon FLUX.1-schnell
+            if use_local_flux:
+                generated = generate_local_flux_image(
+                    prompt=c.gemini_prompt,
+                    output_path=raw_img_path,
+                    quantize=flux_quantize,
+                    steps=4,
+                )
+
+            # 2. Second priority: Cloud API (Gemini / OpenAI)
+            if not generated:
+                generated = generate_single_image(prompt=c.gemini_prompt, output_path=raw_img_path)
+
+            # 3. Composite text & branding onto generated image
+            if generated:
                 create_thumbnail_composite(
                     background_image_path=raw_img_path,
                     output_thumbnail_path=final_thumb_path,
@@ -175,20 +239,17 @@ def generate_all_thumbnails(
                 )
                 successful_renders += 1
             else:
-                console.print(f"  [yellow]○ Direct API generation unavailable for concept {i}.[/yellow]")
+                console.print(f"  [yellow]○ Image generation skipped for concept {i}.[/yellow]")
 
         if successful_renders > 0:
-            console.print(f"[bold green]✨ Successfully generated {successful_renders} thumbnail images in:[/bold green] {thumbs_dir}")
+            console.print(f"\n[bold green]✨ Successfully generated {successful_renders} thumbnail images in:[/bold green] {thumbs_dir}")
         else:
             console.print(
                 Panel(
-                    "[bold yellow]ℹ️  Direct Image Generation API Quota Note[/bold yellow]\n\n"
-                    "Google AI Studio's Free Tier includes text & transcript analysis at $0 cost, "
-                    "while direct API image generation requires Pay-As-You-Go billing enabled.\n\n"
-                    f"👉 [bold green]Easy Free Option:[/bold green] Copy the prompts saved in:\n"
+                    "[bold yellow]ℹ️  Manual Prompt Option[/bold yellow]\n\n"
+                    f"You can copy any of the prompts saved in:\n"
                     f"[bold underline]{prompts_file}[/bold underline]\n"
-                    "Paste them into [bold cyan]gemini.google.com[/bold cyan] or [bold cyan]Midjourney[/bold cyan] for free, "
-                    "then run:\n"
+                    "Paste into [bold cyan]gemini.google.com[/bold cyan], download the image, and run:\n"
                     "[bold]uv run adn composite-thumbnail /path/to/downloaded.png --headline \"TITULAR\"[/bold]",
                     border_style="yellow"
                 )

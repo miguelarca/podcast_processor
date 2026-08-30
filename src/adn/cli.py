@@ -1,6 +1,7 @@
 """Unified CLI entrypoint for ADN Divergente podcast processor."""
 
 import json
+import sys
 from pathlib import Path
 from typing import Optional
 import typer
@@ -326,8 +327,11 @@ def update_metadata(
 def thumbnail_command(
     analysis_file: Path = typer.Argument(..., help="Path to analysis.json"),
     output_dir: Optional[Path] = typer.Option(None, "--output", "-o"),
+    local: bool = typer.Option(True, "--local/--no-local", help="Generate images locally on Apple Silicon GPU using FLUX.1-schnell"),
+    count: int = typer.Option(1, "--count", "-n", help="Number of concept thumbnails to generate with FLUX (1-3)"),
+    quantize: int = typer.Option(4, "--quantize", "-q", help="Quantization bits for FLUX (4 or 8)"),
 ):
-    """🎨 Generate 3 high-CTR thumbnail concepts, Gemini prompts, and attempt image renders."""
+    """🎨 Generate thumbnail concepts, render images locally via FLUX.1-schnell, and composite."""
     try:
         from adn.thumbnail import generate_all_thumbnails
 
@@ -340,7 +344,53 @@ def thumbnail_command(
 
         target_out_dir = output_dir or analysis_file.parent
         base_name = analysis_file.stem.replace("_analysis", "")
-        generate_all_thumbnails(analysis=analysis, output_dir=target_out_dir, base_name=base_name)
+        generate_all_thumbnails(
+            analysis=analysis,
+            output_dir=target_out_dir,
+            base_name=base_name,
+            auto_render_images=True,
+            use_local_flux=local,
+            flux_quantize=quantize,
+            flux_count=count,
+        )
+    except Exception as e:
+        _handle_error(e)
+
+
+@app.command(name="flux-render")
+def flux_render_command(
+    prompt: str = typer.Argument(..., help="Visual prompt description in English"),
+    output_file: Path = typer.Option(Path("flux_output.png"), "--output", "-o", help="Target output image path"),
+    headline: Optional[str] = typer.Option(None, "--headline", "-h", help="Optional headline text to composite"),
+    subtext: Optional[str] = typer.Option(None, "--subtext", "-s", help="Optional subtext to composite"),
+    quantize: int = typer.Option(4, "--quantize", "-q", help="Quantization (4 or 8)"),
+):
+    """⚡ Generate a single 16:9 image locally on Apple Silicon using FLUX.1-schnell."""
+    try:
+        from adn.thumbnail import create_thumbnail_composite, generate_local_flux_image
+
+        raw_path = output_file.parent / f"{output_file.stem}_raw.png"
+        success = generate_local_flux_image(
+            prompt=prompt,
+            output_path=raw_path,
+            quantize=quantize,
+            steps=4,
+        )
+
+        if success:
+            if headline:
+                create_thumbnail_composite(
+                    background_image_path=raw_path,
+                    output_thumbnail_path=output_file,
+                    headline_text=headline,
+                    subtext=subtext,
+                )
+            else:
+                raw_path.rename(output_file)
+            console.print(f"[bold green]✓ FLUX Render Complete:[/bold green] {output_file}")
+        else:
+            console.print("[red]✗ FLUX image generation failed.[/red]")
+            raise typer.Exit(1)
     except Exception as e:
         _handle_error(e)
 
@@ -433,6 +483,14 @@ def doctor():
         table.add_row("YouTube OAuth", "[yellow]Ready to Auth[/yellow]", "Run 'adn auth' to connect channel")
     else:
         table.add_row("YouTube OAuth", "[dim]○ Optional[/dim]", "Add client_secrets.json to enable auto-upload")
+
+    # Check Local FLUX.1 Engine
+    import shutil
+    mflux_bin = Path(sys.executable).parent / "mflux-generate"
+    if mflux_bin.exists() or shutil.which("mflux-generate"):
+        table.add_row("Local Image AI", "[green]✓ FLUX.1-schnell[/green]", "MLX Metal GPU (4-bit/8-bit local)")
+    else:
+        table.add_row("Local Image AI", "[yellow]○ Not Installed[/yellow]", "Run 'uv sync'")
 
     console.print(table)
 
