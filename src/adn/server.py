@@ -345,6 +345,43 @@ def composite_thumbnail(payload: CompositeThumbnailPayload):
     }
 
 
+class ClipThumbnailPromptPayload(BaseModel):
+    title: str
+    hook: Optional[str] = ""
+    summary: Optional[str] = ""
+
+
+@app.post("/api/thumbnails/clip-concept")
+def generate_clip_thumbnail_concept(payload: ClipThumbnailPromptPayload):
+    """Generate a high-CTR visual metaphor and prompt for a specific 16:9 clip."""
+    from google import genai
+    from google.genai import types
+    from adn.thumbnail import ThumbnailConcept
+
+    if not settings.GEMINI_API_KEY:
+        raise HTTPException(status_code=400, detail="GEMINI_API_KEY not configured")
+
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
+    sys_prompt = (
+        "Eres el Director de Arte de ADN Divergente. Para el siguiente extracto o clip, crea un prompt en inglés "
+        "para FLUX/Midjourney (16:9, arte conceptual cinematográfico, iluminación dramática con contrastes, metáfora visual potente) "
+        "y sugiere un titular corto de 2 a 5 palabras en mayúsculas para la miniatura."
+    )
+    user_prompt = f"Título del Clip: {payload.title}\nGancho/Hook: {payload.hook}\nResumen: {payload.summary}"
+
+    res = client.models.generate_content(
+        model=settings.GEMINI_MODEL,
+        contents=f"{sys_prompt}\n\n{user_prompt}",
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=ThumbnailConcept,
+            temperature=0.7,
+        )
+    )
+    concept = ThumbnailConcept.model_validate_json(res.text)
+    return concept.model_dump()
+
+
 class FluxGeneratePayload(BaseModel):
     prompt: str
     output_path: str

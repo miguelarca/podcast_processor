@@ -266,19 +266,77 @@ function renderClips(clipsFiles, clipsMeta) {
       <div class="bg-black aspect-video relative">
         <video controls src="${clip.url}" class="w-full h-full object-contain"></video>
       </div>
-      <div class="p-5 flex-1 flex flex-col justify-between space-y-3">
+      <div class="p-5 flex-1 flex flex-col justify-between space-y-4">
         <div>
           <div class="flex items-center justify-between text-xs text-zinc-500 mb-1">
             <span class="font-mono text-cyan-400 font-semibold">Clip #${i + 1}</span>
             <span>${clip.filename}</span>
           </div>
           <h4 class="font-bold text-sm text-white">${meta.title || clip.filename}</h4>
-          <p class="text-xs text-zinc-400 mt-1.5">${meta.hook || meta.summary || ""}</p>
+          <p class="text-xs text-zinc-400 mt-1.5 leading-relaxed">${meta.hook || meta.summary || ""}</p>
+        </div>
+        <div class="pt-3 border-t border-brand-border/60 flex items-center justify-between">
+          <button onclick="designClipThumbnail(${i})" class="flex items-center space-x-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/40 text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+            <i data-lucide="image" class="w-3.5 h-3.5"></i>
+            <span>Diseñar Miniatura para este Clip</span>
+          </button>
         </div>
       </div>
     `;
     grid.appendChild(card);
   });
+}
+
+function designEpisodeThumbnail() {
+  switchTab("thumbnails");
+  const activeTitle = document.getElementById("epHeaderTitle").textContent;
+  document.getElementById("thumbHeadlineInput").value = activeTitle;
+  document.getElementById("thumbBadgeInput").value = "EPISODIO COMPLETO";
+  updateLiveCanvas();
+}
+
+async function designClipThumbnail(clipIndex) {
+  if (!currentEpisode || !currentEpisode.analysis?.clips) return;
+  const clip = currentEpisode.analysis.clips[clipIndex] || {};
+  
+  // Switch to thumbnails tab
+  switchTab("thumbnails");
+  
+  // Set initial clip title and badge
+  document.getElementById("thumbHeadlineInput").value = clip.title || "CLIP DESTACADO";
+  document.getElementById("thumbSubtextInput").value = clip.hook || "";
+  document.getElementById("thumbBadgeInput").value = "MINI-EPISODIO";
+  updateLiveCanvas();
+
+  // Ask Gemini for tailored visual metaphor prompt
+  showToast("Generando metáfora visual para este clip con Gemini...");
+  try {
+    const res = await fetch("/api/thumbnails/clip-concept", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: clip.title || "",
+        hook: clip.hook || "",
+        summary: clip.summary || "",
+      })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.gemini_prompt) {
+        document.getElementById("fluxPromptInput").value = data.gemini_prompt;
+      }
+      if (data.headline_text) {
+        document.getElementById("thumbHeadlineInput").value = data.headline_text;
+      }
+      if (data.subtext) {
+        document.getElementById("thumbSubtextInput").value = data.subtext;
+      }
+      updateLiveCanvas();
+      showToast("✓ Concepto y prompt para el clip listos en el diseñador");
+    }
+  } catch (e) {
+    console.error("Error generating clip prompt:", e);
+  }
 }
 
 // Render 9:16 Shorts
