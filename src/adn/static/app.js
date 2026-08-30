@@ -287,12 +287,35 @@ function renderClips(clipsFiles, clipsMeta) {
   });
 }
 
+function setCanvasLoading(show, title = "Generando con IA...", subtext = "Renderizando en GPU Apple Silicon") {
+  const overlay = document.getElementById("canvasLoadingOverlay");
+  const titleEl = document.getElementById("canvasLoadingTitle");
+  const subtextEl = document.getElementById("canvasLoadingSubtext");
+  if (!overlay) return;
+
+  if (show) {
+    if (titleEl) titleEl.textContent = title;
+    if (subtextEl) subtextEl.textContent = subtext;
+    overlay.classList.remove("hidden");
+    setTimeout(() => overlay.classList.remove("opacity-0"), 10);
+  } else {
+    overlay.classList.add("opacity-0");
+    setTimeout(() => overlay.classList.add("hidden"), 200);
+  }
+}
+
 function designEpisodeThumbnail() {
   switchTab("thumbnails");
   const activeTitle = document.getElementById("epHeaderTitle").textContent;
   document.getElementById("thumbHeadlineInput").value = activeTitle;
   document.getElementById("thumbBadgeInput").value = "EPISODIO COMPLETO";
   updateLiveCanvas();
+
+  // If prompt is ready, trigger FLUX
+  const prompt = document.getElementById("fluxPromptInput").value.trim();
+  if (prompt) {
+    triggerFluxRender();
+  }
 }
 
 async function designClipThumbnail(clipIndex) {
@@ -304,12 +327,14 @@ async function designClipThumbnail(clipIndex) {
   
   // Set initial clip title and badge
   document.getElementById("thumbHeadlineInput").value = clip.title || "CLIP DESTACADO";
-  document.getElementById("thumbSubtextInput").value = clip.hook || "";
+  document.getElementById("thumbSubtextInput").value = clip.hook ? `"${clip.hook.slice(0, 70)}..."` : "";
   document.getElementById("thumbBadgeInput").value = "MINI-EPISODIO";
   updateLiveCanvas();
 
-  // Ask Gemini for tailored visual metaphor prompt
+  // Show status on canvas overlay
+  setCanvasLoading(true, "🧠 Diseñando concepto visual con Gemini...", "Analizando el ángulo de debate del clip...");
   showToast("Generando metáfora visual para este clip con Gemini...");
+
   try {
     const res = await fetch("/api/thumbnails/clip-concept", {
       method: "POST",
@@ -332,10 +357,15 @@ async function designClipThumbnail(clipIndex) {
         document.getElementById("thumbSubtextInput").value = data.subtext;
       }
       updateLiveCanvas();
-      showToast("✓ Concepto y prompt para el clip listos en el diseñador");
+      
+      // Now auto trigger FLUX local render with the new prompt
+      await triggerFluxRender();
+    } else {
+      setCanvasLoading(false);
     }
   } catch (e) {
     console.error("Error generating clip prompt:", e);
+    setCanvasLoading(false);
   }
 }
 
@@ -516,15 +546,38 @@ function updateLiveCanvas() {
     ctx.fillText(line, width / 2, y);
   });
 
-  // 6. Draw Subtext
+  // 6. Draw Subtext (Wrapped & Clamped)
   if (subtext) {
-    ctx.font = "bold 24px 'Inter', sans-serif";
-    ctx.lineWidth = 5;
+    ctx.font = "bold 22px 'Inter', sans-serif";
+    ctx.lineWidth = 4;
     ctx.strokeStyle = "#000000";
     ctx.fillStyle = "#FDE68A";
-    const subY = startY + lines.length * (fontSize + 4) + 12;
-    ctx.strokeText(subtext, width / 2, subY);
-    ctx.fillText(subtext, width / 2, subY);
+
+    let subWords = subtext.split(" ");
+    let subLines = [];
+    let curSubLine = "";
+    const maxSubWidth = 980;
+
+    subWords.forEach(w => {
+      let testLine = curSubLine ? `${curSubLine} ${w}` : w;
+      if (ctx.measureText(testLine).width > maxSubWidth && curSubLine) {
+        subLines.push(curSubLine);
+        curSubLine = w;
+      } else {
+        curSubLine = testLine;
+      }
+    });
+    if (curSubLine) subLines.push(curSubLine);
+
+    // Limit to 2 lines max
+    subLines = subLines.slice(0, 2);
+    const subStartY = Math.min(startY + lines.length * (fontSize + 4) + 10, 625);
+
+    subLines.forEach((sLine, sIdx) => {
+      const sy = subStartY + sIdx * 26;
+      ctx.strokeText(sLine, width / 2, sy);
+      ctx.fillText(sLine, width / 2, sy);
+    });
   }
 }
 
@@ -548,8 +601,10 @@ async function triggerFluxRender() {
   }
 
   btn.disabled = true;
-  btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin mr-1.5"></i> Renderizando en Apple Silicon GPU...`;
+  btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin mr-1.5"></i> Renderizando en GPU Metal...`;
   lucide.createIcons();
+
+  setCanvasLoading(true, "⚡ Renderizando con FLUX.1 en GPU Apple Silicon...", "Procesando 4 pasos de difusión en 1280x720...");
 
   try {
     const outPath = `${currentEpisode.directory}/thumbnails/flux_${Date.now()}.png`;
@@ -574,6 +629,7 @@ async function triggerFluxRender() {
         btn.disabled = false;
         btn.innerHTML = `<i data-lucide="wand-2" class="w-3.5 h-3.5 mr-1.5"></i> Renderizar Fondo con FLUX`;
         lucide.createIcons();
+        setCanvasLoading(false);
         showToast("¡Imagen generada con FLUX.1 exitosamente!");
         selectThumbnailBackground(sData.url, sData.path);
       } else if (sData.status === "failed") {
@@ -581,12 +637,12 @@ async function triggerFluxRender() {
         btn.disabled = false;
         btn.innerHTML = `<i data-lucide="wand-2" class="w-3.5 h-3.5 mr-1.5"></i> Renderizar Fondo con FLUX`;
         lucide.createIcons();
+        setCanvasLoading(false);
         alert(`Error al generar con FLUX: ${sData.message}`);
       }
     }, 2000);
   } catch (err) {
-    btn.disabled = false;
-    btn.innerHTML = `<i data-lucide="wand-2" class="w-3.5 h-3.5 mr-1.5"></i> Renderizar Fondo con FLUX`;
+    setCanvasLoading(false);
     alert("Error al contactar al servidor FLUX");
   }
 }
