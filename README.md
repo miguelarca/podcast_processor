@@ -47,6 +47,7 @@ uv run adn process episode.mp4
 
 | Command | Description |
 | :--- | :--- |
+| `uv run adn studio` | 🎬 **Launches ADN Studio visual dashboard in your browser** |
 | `uv run adn process <file>` | Full pipeline: Transcribe -> Analyze -> 16:9 Clips -> 9:16 Shorts |
 | `uv run adn transcribe <file>` | Generates Spanish transcript (`.json`, `.txt`, `.srt`) |
 | `uv run adn analyze <transcript.json>` | Generates 10 YouTube titles, chapters, show notes & clip ideas |

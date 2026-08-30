@@ -495,5 +495,35 @@ def doctor():
     console.print(table)
 
 
+@app.command(name="studio")
+def studio_command(
+    path: Optional[Path] = typer.Argument(None, help="Optional specific directory to scan for episodes"),
+    port: int = typer.Option(8000, "--port", "-p", help="Server port"),
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Server host"),
+    no_browser: bool = typer.Option(False, "--no-browser", help="Do not automatically open browser"),
+):
+    """🎨 Launch ADN Studio visual dashboard in your browser."""
+    import uvicorn
+    import webbrowser
+    from adn.server import register_scan_path
+
+    if path:
+        register_scan_path(path.resolve())
+
+    url = f"http://{host}:{port}"
+    console.print(Panel(
+        f"[bold yellow]ADN Divergente Visual Studio[/bold yellow]\n\n"
+        f"🚀 Running at: [bold underline cyan]{url}[/bold underline cyan]\n"
+        f"Press [bold red]Ctrl+C[/bold red] to stop the server.",
+        border_style="yellow"
+    ))
+
+    if not no_browser:
+        import threading
+        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+
+    uvicorn.run("adn.server:app", host=host, port=port, log_level="info")
+
+
 if __name__ == "__main__":
     app()

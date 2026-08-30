@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADN Studio — Suite de Post-Producción</title>
+  <!-- TailwindCSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              gold: '#F59E0B',
+              yellow: '#FBBF24',
+              dark: '#0A0A0C',
+              card: '#121316',
+              border: '#23252B',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Oswald:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .font-display { font-family: 'Oswald', sans-serif; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0A0A0C; }
+    ::-webkit-scrollbar-thumb { background: #23252B; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3B3E47; }
+  </style>
+</head>
+<body class="bg-brand-dark text-zinc-100 min-h-screen flex flex-col antialiased selection:bg-amber-500 selection:text-black">
+
+  <!-- Top Navigation Bar -->
+  <header class="h-16 border-b border-brand-border bg-[#0D0E11]/80 backdrop-blur-md sticky top-0 z-50 flex items-center justify-between px-6">
+    <div class="flex items-center space-x-4">
+      <div class="flex items-center space-x-2 bg-black/60 border border-amber-500/30 px-3 py-1.5 rounded-lg">
+        <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+        <span class="font-display tracking-wider text-amber-400 text-sm font-bold">ADN DIVERGENTE</span>
+        <span class="text-xs text-zinc-500 font-mono">STUDIO</span>
+      </div>
+      <!-- Episode Selector -->
+      <div class="relative">
+        <select id="episodeSelect" class="bg-brand-card border border-brand-border text-zinc-200 text-sm rounded-lg px-3 py-1.5 pr-8 focus:outline-none focus:border-amber-500 appearance-none cursor-pointer">
+          <option value="">Cargando episodios...</option>
+        </select>
+        <i data-lucide="chevron-down" class="w-4 h-4 text-zinc-400 absolute right-2.5 top-2.5 pointer-events-none"></i>
+      </div>
+    </div>
+
+    <!-- Right: YouTube Auth Badge & Status -->
+    <div class="flex items-center space-x-4">
+      <div id="ytStatusBadge" class="flex items-center space-x-2 bg-brand-card border border-brand-border px-3 py-1 rounded-full text-xs">
+        <i data-lucide="youtube" class="w-4 h-4 text-red-500"></i>
+        <span id="ytStatusText" class="text-zinc-400">Verificando...</span>
+      </div>
+      <button onclick="saveAllChanges()" class="flex items-center space-x-1.5 bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs px-4 py-2 rounded-lg transition">
+        <i data-lucide="save" class="w-3.5 h-3.5"></i>
+        <span>Guardar Cambios</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Layout -->
+  <div class="flex-1 flex overflow-hidden">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="w-64 border-r border-brand-border bg-brand-card/40 flex flex-col p-4 space-y-1">
+      <p class="text-[10px] font-bold uppercase tracking-wider text-zinc-500 px-3 mb-2">Vistas del Episodio</p>
+      
+      <button onclick="switchTab('overview')" id="tab-btn-overview" class="tab-btn active flex items-center space-x-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition text-amber-400 bg-amber-500/10 border border-amber-500/20">
+        <i data-lucide="play-square" class="w-4 h-4"></i>
+        <span>Episodio & Capítulos</span>
+      </button>
+
+      <button onclick="switchTab('titles')" id="tab-btn-titles" class="tab-btn flex items-center space-x-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition text-zinc-400 hover:text-zinc-200 hover:bg-white/5">
+        <i data-lucide="sparkles" class="w-4 h-4 text-amber-400"></i>
+        <span>10 Títulos & SEO</span>
+      </button>
+
+      <button onclick="switchTab('clips')" id="tab-btn-clips" class="tab-btn flex items-center space-x-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition text-zinc-400 hover:text-zinc-200 hover:bg-white/5">
+        <i data-lucide="scissors" class="w-4 h-4 text-cyan-400"></i>
+        <span>Clips 16:9</span>
+        <span id="clipsBadge" class="ml-auto bg-zinc-800 text-zinc-400 text-xs px-2 py-0.5 rounded-full">0</span>
+      </button>
+
+      <button onclick="switchTab('shorts')" id="tab-btn-shorts" class="tab-btn flex items-center space-x-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition text-zinc-400 hover:text-zinc-200 hover:bg-white/5">
+        <i data-lucide="smartphone" class="w-4 h-4 text-pink-400"></i>
+        <span>Shorts 9:16</span>
+        <span id="shortsBadge" class="ml-auto bg-zinc-800 text-zinc-400 text-xs px-2 py-0.5 rounded-full">0</span>
+      </button>
+
+      <button onclick="switchTab('thumbnails')" id="tab-btn-thumbnails" class="tab-btn flex items-center space-x-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition text-zinc-400 hover:text-zinc-200 hover:bg-white/5">
+        <i data-lucide="image" class="w-4 h-4 text-emerald-400"></i>
+        <span>Estudio de Miniaturas</span>
+      </button>
+
+      <div class="pt-4 mt-auto border-t border-brand-border">
+        <button onclick="switchTab('publish')" id="tab-btn-publish" class="flex items-center justify-center space-x-2 w-full py-2.5 rounded-lg text-sm font-bold transition bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white shadow-lg shadow-red-950/40">
+          <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+          <span>Publicar en YouTube</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto w-full">
+
+      <!-- TAB 1: OVERVIEW & CHAPTERS -->
+      <section id="tab-overview" class="tab-content space-y-6">
+        <!-- Episode Header Banner -->
+        <div class="bg-brand-card border border-brand-border rounded-xl p-6 relative overflow-hidden">
+          <div class="absolute -right-10 -top-10 w-48 h-48 bg-amber-500/5 rounded-full blur-3xl pointer-events-none"></div>
+          <div class="flex items-start justify-between">
+            <div class="space-y-1">
+              <span class="text-xs uppercase tracking-wider text-amber-400 font-semibold">Episodio Activo</span>
+              <h1 id="epHeaderTitle" class="text-2xl font-bold text-white tracking-tight">Cargando episodio...</h1>
+              <p id="epHeaderSummary" class="text-sm text-zinc-400 max-w-3xl leading-relaxed pt-1"></p>
+            </div>
+          </div>
+          <!-- Tags -->
+          <div id="epThemes" class="flex flex-wrap gap-2 mt-4"></div>
+        </div>
+
+        <!-- Video Player & Chapters Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <!-- Left: Video Player -->
+          <div class="lg:col-span-7 bg-brand-card border border-brand-border rounded-xl overflow-hidden flex flex-col">
+            <div class="bg-black aspect-video flex items-center justify-center relative group">
+              <video id="mainVideoPlayer" controls class="w-full h-full object-contain">
+                Tu navegador no soporta reproducción de video.
+              </video>
+            </div>
+            <div class="p-4 border-t border-brand-border flex items-center justify-between text-xs text-zinc-400">
+              <span id="videoPathLabel" class="truncate max-w-md"></span>
+              <span class="text-amber-400 font-mono">1080p Stream</span>
+            </div>
+          </div>
+
+          <!-- Right: Interactive Chapters List -->
+          <div class="lg:col-span-5 bg-brand-card border border-brand-border rounded-xl flex flex-col">
+            <div class="p-4 border-b border-brand-border flex items-center justify-between">
+              <div class="flex items-center space-x-2">
+                <i data-lucide="list-video" class="w-4 h-4 text-amber-400"></i>
+                <h3 class="font-semibold text-sm text-zinc-200">Capítulos & Marcas de Tiempo</h3>
+              </div>
+              <span id="chaptersCount" class="text-xs text-zinc-500">0 capítulos</span>
+            </div>
+            <div id="chaptersList" class="divide-y divide-brand-border/60 overflow-y-auto max-h-[380px] p-2 space-y-1">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+        </div>
+
+        <!-- YouTube Description Editor -->
+        <div class="bg-brand-card border border-brand-border rounded-xl p-6 space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="file-text" class="w-4 h-4 text-amber-400"></i>
+              <h3 class="font-semibold text-sm text-zinc-200">Descripción Completa para YouTube</h3>
+            </div>
+            <button onclick="copyDescription()" class="text-xs text-amber-400 hover:text-amber-300 flex items-center space-x-1">
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+              <span>Copiar Texto</span>
+            </button>
+          </div>
+          <textarea id="descEditor" rows="8" class="w-full bg-black/40 border border-brand-border rounded-lg p-3 text-sm text-zinc-300 focus:outline-none focus:border-amber-500 font-mono leading-relaxed resize-y"></textarea>
+        </div>
+      </section>
+
+
+      <!-- TAB 2: 10 TITLES & SEO -->
+      <section id="tab-titles" class="tab-content hidden space-y-6">
+        <div>
+          <h2 class="text-xl font-bold text-white">10 Opciones de Títulos con Alto CTR</h2>
+          <p class="text-sm text-zinc-400">Generados por IA según ángulos de psicología, debate y curiosidad. Haz clic en cualquiera para seleccionarlo como título principal.</p>
+        </div>
+        <div id="titlesGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Rendered via JS -->
+        </div>
+      </section>
+
+
+      <!-- TAB 3: 16:9 CLIPS -->
+      <section id="tab-clips" class="tab-content hidden space-y-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-xl font-bold text-white">Mini-Episodios Standalone (16:9)</h2>
+            <p class="text-sm text-zinc-400">Extractos completos de 3 a 8 minutos cortados sin pérdida de calidad.</p>
+          </div>
+        </div>
+        <div id="clipsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- Rendered via JS -->
+        </div>
+      </section>
+
+
+      <!-- TAB 4: 9:16 SHORTS -->
+      <section id="tab-shorts" class="tab-content hidden space-y-6">
+        <div>
+          <h2 class="text-xl font-bold text-white">Shorts Verticales (9:16) con Subtítulos Dinámicos</h2>
+          <p class="text-sm text-zinc-400">Videos verticales listos para YouTube Shorts, Instagram Reels y TikTok con animación de karaoke.</p>
+        </div>
+        <div id="shortsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <!-- Rendered via JS -->
+        </div>
+      </section>
+
+
+      <!-- TAB 5: THUMBNAILS STUDIO -->
+      <section id="tab-thumbnails" class="tab-content hidden space-y-8">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-xl font-bold text-white">Estudio de Miniaturas en Tiempo Real</h2>
+            <p class="text-sm text-zinc-400">Edita el titular, ajusta colores y genera fondos con FLUX.1 en tu Mac con vista previa instantánea.</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <!-- Left: Live 16:9 Thumbnail Canvas -->
+          <div class="lg:col-span-8 space-y-4">
+            <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex flex-col items-center justify-center">
+              <div class="relative w-full aspect-video rounded-lg overflow-hidden border border-zinc-800 shadow-2xl bg-black">
+                <canvas id="thumbCanvas" width="1280" height="720" class="w-full h-full object-contain"></canvas>
+              </div>
+              <div class="flex items-center justify-between w-full mt-3 text-xs text-zinc-400">
+                <span>Resolución: 1280 × 720 (16:9 HD)</span>
+                <button onclick="downloadThumbnail()" class="flex items-center space-x-1.5 bg-amber-500 hover:bg-amber-400 text-black font-semibold px-4 py-2 rounded-lg transition">
+                  <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                  <span>Descargar Miniatura JPG</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Visual Background Gallery -->
+            <div class="bg-brand-card border border-brand-border rounded-xl p-5 space-y-3">
+              <h4 class="text-sm font-semibold text-zinc-200">Fondos Disponibles</h4>
+              <div id="thumbBackgroundsList" class="flex gap-3 overflow-x-auto pb-2">
+                <!-- Background thumbnails rendered via JS -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Typography & FLUX Controls -->
+          <div class="lg:col-span-4 space-y-5">
+            <!-- Typography Editor -->
+            <div class="bg-brand-card border border-brand-border rounded-xl p-5 space-y-4">
+              <h4 class="text-sm font-bold text-amber-400 uppercase tracking-wider">Editor de Tipografía</h4>
+              
+              <div class="space-y-1.5">
+                <label class="text-xs text-zinc-400 font-medium">Titular Principal (Línea 1 & 2):</label>
+                <textarea id="thumbHeadlineInput" rows="2" oninput="updateLiveCanvas()" class="w-full bg-black/50 border border-brand-border rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-amber-500 font-bold uppercase resize-none"></textarea>
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="text-xs text-zinc-400 font-medium">Subtítulo de Apoyo:</label>
+                <input id="thumbSubtextInput" type="text" oninput="updateLiveCanvas()" class="w-full bg-black/50 border border-brand-border rounded-lg p-2.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500">
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="text-xs text-zinc-400 font-medium">Texto de la Insignia:</label>
+                <input id="thumbBadgeInput" type="text" value="EPISODIO COMPLETO" oninput="updateLiveCanvas()" class="w-full bg-black/50 border border-brand-border rounded-lg p-2 text-xs text-zinc-300 focus:outline-none focus:border-amber-500">
+              </div>
+            </div>
+
+            <!-- FLUX Local Generator Box -->
+            <div class="bg-brand-card border border-brand-border rounded-xl p-5 space-y-4 relative overflow-hidden">
+              <div class="flex items-center space-x-2">
+                <i data-lucide="cpu" class="w-4 h-4 text-emerald-400"></i>
+                <h4 class="text-sm font-bold text-zinc-200">Generar Fondo con FLUX.1 Local</h4>
+              </div>
+              <p class="text-xs text-zinc-400">Genera una nueva escena conceptual 16:9 en tu GPU Apple Silicon sin costo.</p>
+              
+              <div class="space-y-1.5">
+                <textarea id="fluxPromptInput" rows="3" placeholder="Describe la metáfora visual en inglés..." class="w-full bg-black/50 border border-brand-border rounded-lg p-2.5 text-xs text-zinc-300 focus:outline-none focus:border-emerald-500 resize-none"></textarea>
+              </div>
+
+              <button onclick="triggerFluxRender()" id="fluxRenderBtn" class="w-full py-2.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center space-x-1.5 transition">
+                <i data-lucide="wand-2" class="w-3.5 h-3.5"></i>
+                <span>Renderizar Fondo con FLUX</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- TAB 6: PUBLISH TO YOUTUBE -->
+      <section id="tab-publish" class="tab-content hidden space-y-6">
+        <div>
+          <h2 class="text-xl font-bold text-white">Centro de Publicación en YouTube</h2>
+          <p class="text-sm text-zinc-400">Revisa la configuración y sube el episodio completo y los shorts directamente a tu canal.</p>
+        </div>
+
+        <div class="bg-brand-card border border-brand-border rounded-xl p-6 space-y-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Privacy Setting -->
+            <div class="space-y-2">
+              <label class="text-xs text-zinc-400 font-semibold uppercase tracking-wider">Visibilidad en YouTube</label>
+              <select id="pubPrivacy" class="w-full bg-black/60 border border-brand-border rounded-lg p-3 text-sm text-white focus:outline-none focus:border-amber-500">
+                <option value="unlisted" selected>🔒 No listado (Unlisted - Recomendado)</option>
+                <option value="private">🔒 Privado (Private)</option>
+                <option value="public">🌐 Público (Public)</option>
+              </select>
+            </div>
+
+            <!-- Active Title -->
+            <div class="space-y-2">
+              <label class="text-xs text-zinc-400 font-semibold uppercase tracking-wider">Título de Publicación</label>
+              <input id="pubTitle" type="text" class="w-full bg-black/60 border border-brand-border rounded-lg p-3 text-sm text-white focus:outline-none focus:border-amber-500">
+            </div>
+          </div>
+
+          <!-- Upload Checklist -->
+          <div class="border border-brand-border/80 rounded-lg p-4 bg-black/30 space-y-3">
+            <h4 class="text-xs font-bold text-zinc-300 uppercase tracking-wider">Elementos que se adjuntarán automáticamente:</h4>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-zinc-400">
+              <div class="flex items-center space-x-2 text-emerald-400">
+                <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+                <span>Marcas de tiempo & Capítulos interactivos</span>
+              </div>
+              <div class="flex items-center space-x-2 text-emerald-400">
+                <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+                <span>Subtítulos en español nativos (.SRT)</span>
+              </div>
+              <div class="flex items-center space-x-2 text-emerald-400">
+                <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+                <span>Etiquetas y palabras clave del debate</span>
+              </div>
+              <div class="flex items-center space-x-2 text-emerald-400">
+                <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+                <span>Miniatura personalizada 16:9</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="pt-2">
+            <button onclick="publishEpisode()" id="publishBtn" class="w-full py-4 rounded-xl text-sm font-bold bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white shadow-xl shadow-red-950/50 flex items-center justify-center space-x-2 transition">
+              <i data-lucide="rocket" class="w-5 h-5"></i>
+              <span>Subir Episodio Completo a YouTube Ahora</span>
+            </button>
+          </div>
+
+          <div id="uploadStatusBox" class="hidden p-4 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs"></div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast" class="fixed bottom-6 right-6 bg-zinc-900 border border-amber-500/40 text-white px-5 py-3 rounded-xl shadow-2xl text-xs flex items-center space-x-2 transform translate-y-20 opacity-0 transition-all duration-300 z-50">
+    <i data-lucide="info" class="w-4 h-4 text-amber-400"></i>
+    <span id="toastMsg">Cambios guardados</span>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
