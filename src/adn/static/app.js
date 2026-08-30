@@ -132,7 +132,7 @@ async function loadEpisodeDetails(episodeId, dirPath) {
     }
 
     // Chapters
-    renderChapters(data.analysis.chapters || []);
+    renderChapters(data.analysis.youtube_chapters || data.analysis.chapters || []);
 
     // Description Editor
     document.getElementById("descEditor").value = data.analysis.youtube_description || "";
@@ -170,9 +170,10 @@ function renderChapters(chapters) {
   chapters.forEach((ch, idx) => {
     const item = document.createElement("div");
     item.className = "flex items-center justify-between p-2.5 hover:bg-white/5 rounded-lg cursor-pointer transition group";
+    const sec = (ch.seconds !== undefined) ? ch.seconds : ((ch.start_seconds !== undefined) ? ch.start_seconds : 0);
     item.onclick = () => {
       const player = document.getElementById("mainVideoPlayer");
-      player.currentTime = ch.start_seconds;
+      player.currentTime = sec;
       player.play();
     };
 
