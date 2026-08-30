@@ -618,3 +618,103 @@ async function publishEpisode() {
     statusBox.textContent = `Error de conexión: ${err.message}`;
   }
 }
+
+// New Episode Modal Functions
+function openNewEpisodeModal() {
+  const modal = document.getElementById("newEpisodeModal");
+  modal.classList.remove("hidden");
+  setTimeout(() => modal.classList.remove("opacity-0"), 10);
+  document.getElementById("newEpisodeForm").classList.remove("hidden");
+  document.getElementById("newEpisodeProgress").classList.add("hidden");
+}
+
+function closeNewEpisodeModal() {
+  const modal = document.getElementById("newEpisodeModal");
+  modal.classList.add("opacity-0");
+  setTimeout(() => modal.classList.add("hidden"), 200);
+}
+
+async function submitNewEpisodeProcess() {
+  const videoPath = document.getElementById("newVideoPathInput").value.trim();
+  const cutClips = document.getElementById("chkCutClips").checked;
+  const genShorts = document.getElementById("chkGenShorts").checked;
+
+  if (!videoPath) {
+    alert("Por favor ingresa la ruta del video de Riverside.");
+    return;
+  }
+
+  const form = document.getElementById("newEpisodeForm");
+  const progress = document.getElementById("newEpisodeProgress");
+  const stageText = document.getElementById("procStageText");
+  const percentText = document.getElementById("procPercentText");
+  const progressBar = document.getElementById("procProgressBar");
+  const logBox = document.getElementById("procLogBox");
+
+  form.classList.add("hidden");
+  progress.classList.remove("hidden");
+  logBox.innerHTML = `<div>🚀 Iniciando procesamiento para: ${videoPath}</div>`;
+
+  try {
+    const res = await fetch("/api/pipeline/process", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        video_path: videoPath,
+        skip_cuts: !cutClips,
+        skip_shorts: !genShorts,
+      }),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json();
+      throw new Error(errData.detail || "Error al iniciar pipeline");
+    }
+
+    const data = await res.json();
+    const jobId = data.job_id;
+
+    // Poll status
+    const pollInterval = setInterval(async () => {
+      try {
+        const jRes = await fetch(`/api/jobs/${jobId}`);
+        const jData = await jRes.json();
+
+        if (jData.message) stageText.textContent = jData.message;
+        if (jData.progress) {
+          percentText.textContent = `${jData.progress}%`;
+          progressBar.style.width = `${jData.progress}%`;
+        }
+
+        if (jData.logs) {
+          logBox.innerHTML = jData.logs.map(l => `<div>• ${l}</div>`).join("");
+          logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        if (jData.status === "completed") {
+          clearInterval(pollInterval);
+          stageText.textContent = "🎉 ¡Procesamiento Completado!";
+          percentText.textContent = "100%";
+          progressBar.style.width = "100%";
+          showToast("¡Nuevo episodio procesado exitosamente!");
+          setTimeout(async () => {
+            closeNewEpisodeModal();
+            await loadEpisodesList();
+            if (jData.episode_id) {
+              loadEpisodeDetails(jData.episode_id, jData.directory);
+            }
+          }, 1500);
+        } else if (jData.status === "failed") {
+          clearInterval(pollInterval);
+          stageText.textContent = `❌ Error: ${jData.message}`;
+          stageText.className = "font-semibold text-red-400";
+        }
+      } catch (pollErr) {
+        console.error("Polling error:", pollErr);
+      }
+    }, 2500);
+  } catch (err) {
+    stageText.textContent = `Error: ${err.message}`;
+    stageText.className = "font-semibold text-red-400";
+  }
+}

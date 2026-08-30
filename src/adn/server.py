@@ -472,6 +472,99 @@ async def publish_full_episode(payload: YouTubeUploadPayload, background_tasks: 
 
 
 # -----------------------------------------------------------------------------
+# In-Studio Pipeline Runner for New Episodes
+# -----------------------------------------------------------------------------
+
+class ProcessPipelinePayload(BaseModel):
+    video_path: str
+    whisper_backend: Optional[str] = "faster-whisper"
+    skip_cuts: bool = False
+    skip_shorts: bool = False
+
+
+@app.post("/api/pipeline/process")
+async def start_pipeline_process(payload: ProcessPipelinePayload, background_tasks: BackgroundTasks):
+    """Run full post-production pipeline on a new video recording directly from ADN Studio."""
+    video_file = Path(payload.video_path)
+    if not video_file.exists():
+        raise HTTPException(status_code=400, detail=f"Video file not found at: {payload.video_path}")
+
+    job_id = f"proc_{int(asyncio.get_event_loop().time())}"
+    JOB_STATUS[job_id] = {
+        "status": "running",
+        "stage": "starting",
+        "progress": 5,
+        "message": "Inicializando pipeline...",
+        "logs": [f"Iniciando procesamiento para: {video_file.name}"],
+    }
+
+    def run_pipeline():
+        try:
+            from adn.transcriber import run_transcription
+            from adn.analyzer import run_analysis
+            from adn.cutter import cut_all_clips
+            from adn.shorts import generate_all_shorts
+            from adn.thumbnail import generate_all_thumbnails
+
+            base_name = video_file.stem
+            target_out_dir = video_file.parent / base_name
+            target_out_dir.mkdir(parents=True, exist_ok=True)
+            register_scan_path(target_out_dir.parent)
+
+            # 1. Transcribe
+            JOB_STATUS[job_id]["stage"] = "transcribing"
+            JOB_STATUS[job_id]["progress"] = 20
+            JOB_STATUS[job_id]["message"] = "Transcribiendo audio en español con Whisper..."
+            JOB_STATUS[job_id]["logs"].append("Extrayendo audio y transcribiendo...")
+            transcript = run_transcription(input_file=video_file, output_dir=target_out_dir, backend=payload.whisper_backend)
+            JOB_STATUS[job_id]["logs"].append(f"Transcripción finalizada ({transcript.duration / 60:.1f} min).")
+
+            # 2. Analyze with Gemini
+            JOB_STATUS[job_id]["stage"] = "analyzing"
+            JOB_STATUS[job_id]["progress"] = 45
+            JOB_STATUS[job_id]["message"] = "Analizando con Gemini 3.6 Flash..."
+            JOB_STATUS[job_id]["logs"].append("Generando 10 títulos, capítulos, clips y shorts...")
+            analysis = run_analysis(transcript=transcript, output_dir=target_out_dir, base_name=base_name)
+            JOB_STATUS[job_id]["logs"].append(f"Análisis editorial completado.")
+
+            # 3. Cut 16:9 Clips
+            if not payload.skip_cuts:
+                JOB_STATUS[job_id]["stage"] = "cutting_clips"
+                JOB_STATUS[job_id]["progress"] = 65
+                JOB_STATUS[job_id]["message"] = "Cortando clips 16:9..."
+                JOB_STATUS[job_id]["logs"].append(f"Cortando {len(analysis.clips)} mini-episodios 16:9...")
+                cut_all_clips(input_video=video_file, clips=analysis.clips, output_dir=target_out_dir)
+
+            # 4. Generate 9:16 Shorts
+            if not payload.skip_shorts:
+                JOB_STATUS[job_id]["stage"] = "generating_shorts"
+                JOB_STATUS[job_id]["progress"] = 85
+                JOB_STATUS[job_id]["message"] = "Renderizando shorts 9:16 con subtítulos animados..."
+                JOB_STATUS[job_id]["logs"].append(f"Generando {len(analysis.shorts)} shorts verticales...")
+                generate_all_shorts(input_video=video_file, transcript=transcript, shorts=analysis.shorts, output_dir=target_out_dir)
+
+            # 5. Thumbnails
+            JOB_STATUS[job_id]["stage"] = "thumbnails"
+            JOB_STATUS[job_id]["progress"] = 95
+            JOB_STATUS[job_id]["message"] = "Generando conceptos de miniaturas..."
+            generate_all_thumbnails(analysis=analysis, output_dir=target_out_dir, base_name=base_name, auto_render_images=False)
+
+            JOB_STATUS[job_id]["status"] = "completed"
+            JOB_STATUS[job_id]["progress"] = 100
+            JOB_STATUS[job_id]["message"] = "¡Episodio procesado exitosamente!"
+            JOB_STATUS[job_id]["episode_id"] = base_name
+            JOB_STATUS[job_id]["directory"] = str(target_out_dir)
+            JOB_STATUS[job_id]["logs"].append("Procesamiento finalizado con éxito.")
+        except Exception as e:
+            JOB_STATUS[job_id]["status"] = "failed"
+            JOB_STATUS[job_id]["message"] = str(e)
+            JOB_STATUS[job_id]["logs"].append(f"Error fatal: {e}")
+
+    background_tasks.add_task(run_pipeline)
+    return {"job_id": job_id, "status": "queued"}
+
+
+# -----------------------------------------------------------------------------
 # Serve Static Frontend
 # -----------------------------------------------------------------------------
 
