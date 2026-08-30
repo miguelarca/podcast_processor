@@ -103,13 +103,31 @@ def generate_local_flux_image(
         "--output", str(output_path),
     ]
 
+    import os
+    env = os.environ.copy()
+    if settings.HF_TOKEN:
+        env["HF_TOKEN"] = settings.HF_TOKEN
+        env["HUGGING_FACE_HUB_TOKEN"] = settings.HF_TOKEN
+
     console.print(f"  [cyan]⚡ Generating with local FLUX.1-schnell on Apple Silicon ({steps} steps, {quantize}-bit)...[/cyan]")
-    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
     if res.returncode == 0 and output_path.exists():
         return True
     else:
         err_msg = res.stderr.strip() or res.stdout.strip()
-        if err_msg:
+        if "401" in err_msg or "Unauthorized" in err_msg:
+            console.print(
+                Panel(
+                    "[bold yellow]🔑 Hugging Face Authentication Required for FLUX.1[/bold yellow]\n\n"
+                    "Black Forest Labs requires accepting their terms to download FLUX.1-schnell weights:\n"
+                    "1. Go to: [bold cyan]https://huggingface.co/black-forest-labs/FLUX.1-schnell[/bold cyan] and click 'Agree'.\n"
+                    "2. Get your free token at: [bold cyan]https://huggingface.co/settings/tokens[/bold cyan]\n"
+                    "3. Add to your [bold].env[/bold] file:\n"
+                    "   [bold green]HF_TOKEN=hf_...[/bold green]\n",
+                    border_style="yellow"
+                )
+            )
+        elif err_msg:
             console.print(f"  [yellow]Local FLUX notice:[/yellow] {err_msg[:200]}")
         return False
 

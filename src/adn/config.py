@@ -14,10 +14,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # API Keys
+    # API Keys & Tokens
     GEMINI_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     GROQ_API_KEY: Optional[str] = None
+    HF_TOKEN: Optional[str] = None
 
     # Processing Defaults
     DEFAULT_LLM_PROVIDER: Literal["gemini", "openai"] = "gemini"
